@@ -2,6 +2,7 @@ from copy import deepcopy
 from typing import Any, Optional
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from rampart.app.client_store import ClientRecord, client_context_from_record, resolve_client_from_api_key
@@ -18,6 +19,13 @@ app = FastAPI(
     title="RAMPART",
     description="Request And Model Prompt Analysis & Routing Tool",
     version="0.1.0",
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 app.include_router(ui_router)
 app.include_router(playground_router)
