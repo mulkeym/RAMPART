@@ -1134,7 +1134,7 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
     .login {{ max-width: 420px; margin: 48px auto; }}
     .login h1 {{ color: var(--primary); }}
     .modal-overlay {{ display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; }}
-    .modal-overlay.open {{ display: flex; }}
+    .modal-overlay.active {{ display: flex; }}
     .modal {{ background: var(--panel); border: 1px solid var(--border-strong); border-radius: 10px; padding: 28px; max-width: 480px; width: 90%; animation: fadeIn 0.2s ease-out; }}
     @keyframes fadeIn {{ from {{ opacity: 0; }} to {{ opacity: 1; }} }}
     @media (max-width: 760px) {{
