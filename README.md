@@ -4,7 +4,23 @@ RAMPART is a prompt and tool-calling firewall for OpenAI-compatible API requests
 
 `RAMPART` stands for **Request And Model Prompt Analysis & Routing Tool**.
 
-## Run
+## Run with Docker
+
+```bash
+docker compose up -d
+```
+
+The UI is available at `http://localhost:8080`. Override settings with environment
+variables in a `.env` file or directly in `docker-compose.yml`.
+
+## Run without Docker
+
+```bash
+pip install .
+uvicorn rampart.app.main:app --host 0.0.0.0 --port 8080
+```
+
+For development with auto-reload:
 
 ```bash
 python3 -m uvicorn rampart.app.main:app --reload --host 0.0.0.0 --port 8080

@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.env
+.DS_Store
+.git/
+.superpowers/
+data/
+logs/
+docs/
+tests/
+*.md

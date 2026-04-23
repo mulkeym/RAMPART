@@ -1,0 +1,22 @@
+services:
+  rampart:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - rampart-data:/app/data
+      - rampart-logs:/app/logs
+      - ./policies:/app/policies
+    environment:
+      - RAMPART_SESSION_SECRET=${RAMPART_SESSION_SECRET:-change-me-in-production}
+      - RAMPART_ADMIN_USERNAME=${RAMPART_ADMIN_USERNAME:-admin}
+      # - RAMPART_ADMIN_PASSWORD_HASH=
+      # - RAMPART_MCP_ADMIN_KEY=
+      # - RAMPART_UPSTREAM_BASE_URL=http://192.168.1.181:8000/v1
+      # - RAMPART_LLM_EVALUATOR_BASE_URL=http://192.168.1.181:8080/v1
+      # - RAMPART_VISION_EVALUATOR_BASE_URL=http://192.168.1.181:8081/v1
+    restart: unless-stopped
+
+volumes:
+  rampart-data:
+  rampart-logs:
