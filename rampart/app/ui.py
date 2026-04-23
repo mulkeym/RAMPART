@@ -230,6 +230,9 @@ async def update_settings(request: Request) -> HTMLResponse:
             llm_evaluator_base_url=form.get("llm_evaluator_base_url", "").strip(),
             llm_evaluator_model=form.get("llm_evaluator_model", "").strip(),
             llm_evaluator_timeout_seconds=_optional_float(form.get("llm_evaluator_timeout_seconds", "")),
+            vision_evaluator_base_url=form.get("vision_evaluator_base_url", "").strip(),
+            vision_evaluator_model=form.get("vision_evaluator_model", "").strip(),
+            vision_evaluator_timeout_seconds=_optional_float(form.get("vision_evaluator_timeout_seconds", "")),
             upstream_enabled=form.get("upstream_enabled") == "on",
             upstream_base_url=form.get("upstream_base_url", "").strip(),
             upstream_model=form.get("upstream_model", "").strip(),
@@ -636,6 +639,13 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
           <label>Base URL<input name="llm_evaluator_base_url" value="{get_value("llm_evaluator_base_url", config.llm_evaluator.base_url)}" placeholder="{escape(config.llm_evaluator.base_url)}"></label>
           <label>Model<input name="llm_evaluator_model" value="{get_value("llm_evaluator_model", config.llm_evaluator.model)}" placeholder="{escape(config.llm_evaluator.model)}"></label>
           <label>Timeout Seconds<input name="llm_evaluator_timeout_seconds" value="{get_value("llm_evaluator_timeout_seconds", config.llm_evaluator.timeout_seconds)}" inputmode="decimal"></label>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend>Vision Evaluator LLM</legend>
+          <div class="hint">Used for evaluating image content against policies. Requires a vision-capable model.</div>
+          <label>Base URL<input name="vision_evaluator_base_url" value="{get_value("vision_evaluator_base_url", config.vision_evaluator.base_url)}" placeholder="{escape(config.vision_evaluator.base_url)}"></label>
+          <label>Model<input name="vision_evaluator_model" value="{get_value("vision_evaluator_model", config.vision_evaluator.model)}" placeholder="{escape(config.vision_evaluator.model)}"></label>
+          <label>Timeout Seconds<input name="vision_evaluator_timeout_seconds" value="{get_value("vision_evaluator_timeout_seconds", config.vision_evaluator.timeout_seconds)}" inputmode="decimal"></label>
         </fieldset>
         <fieldset class="fieldset">
           <legend>Default Pass-Through LLM</legend>

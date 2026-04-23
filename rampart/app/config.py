@@ -16,6 +16,14 @@ class LlmEvaluatorConfig(BaseModel):
     fail_closed_on_error: bool = True
 
 
+class VisionEvaluatorConfig(BaseModel):
+    enabled: bool = False
+    base_url: str = "http://192.168.1.181:8082"
+    model: str = ""
+    timeout_seconds: float = 30.0
+    fail_closed_on_error: bool = True
+
+
 class FailureResponseConfig(BaseModel):
     include_sanitized_request: bool = True
 
@@ -63,6 +71,7 @@ class CheckConfig(BaseModel):
     denied_tools: Optional[list[str]] = None
     allowed_models: Optional[list[str]] = None
     max_chars: Optional[int] = None
+    skip_vision: Optional[bool] = None
 
 
 class PolicyConfig(BaseModel):
@@ -78,6 +87,7 @@ class PolicyConfig(BaseModel):
 class AppConfig(BaseModel):
     version: int = 1
     llm_evaluator: LlmEvaluatorConfig = Field(default_factory=LlmEvaluatorConfig)
+    vision_evaluator: VisionEvaluatorConfig = Field(default_factory=VisionEvaluatorConfig)
     failure_response: FailureResponseConfig = Field(default_factory=FailureResponseConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     clients: ClientStoreConfig = Field(default_factory=ClientStoreConfig)
@@ -141,6 +151,9 @@ def _apply_env_overrides(config: AppConfig) -> None:
     llm = config.llm_evaluator
     llm.base_url = os.getenv("RAMPART_LLM_EVALUATOR_BASE_URL", llm.base_url)
     llm.model = os.getenv("RAMPART_LLM_EVALUATOR_MODEL", llm.model)
+    vision = config.vision_evaluator
+    vision.base_url = os.getenv("RAMPART_VISION_EVALUATOR_BASE_URL", vision.base_url)
+    vision.model = os.getenv("RAMPART_VISION_EVALUATOR_MODEL", vision.model)
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -170,3 +183,9 @@ def _apply_local_settings(config: AppConfig) -> None:
         config.upstream.api_key = settings.upstream_api_key
     if settings.upstream_timeout_seconds is not None:
         config.upstream.timeout_seconds = settings.upstream_timeout_seconds
+    if settings.vision_evaluator_base_url:
+        config.vision_evaluator.base_url = settings.vision_evaluator_base_url
+    if settings.vision_evaluator_model:
+        config.vision_evaluator.model = settings.vision_evaluator_model
+    if settings.vision_evaluator_timeout_seconds is not None:
+        config.vision_evaluator.timeout_seconds = settings.vision_evaluator_timeout_seconds

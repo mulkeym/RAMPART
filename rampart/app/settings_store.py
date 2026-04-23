@@ -11,6 +11,9 @@ class RuntimeSettings(BaseModel):
     llm_evaluator_base_url: str = ""
     llm_evaluator_model: str = ""
     llm_evaluator_timeout_seconds: Optional[float] = None
+    vision_evaluator_base_url: str = ""
+    vision_evaluator_model: str = ""
+    vision_evaluator_timeout_seconds: Optional[float] = None
     upstream_enabled: Optional[bool] = None
     upstream_base_url: str = ""
     upstream_model: str = ""
