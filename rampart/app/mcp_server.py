@@ -451,6 +451,10 @@ def handle_list_clients() -> str:
             "enabled": c.enabled,
             "policy_ids": c.policy_ids,
             "last_used_at": c.last_used_at,
+            "total_prompt_tokens": c.total_prompt_tokens,
+            "total_completion_tokens": c.total_completion_tokens,
+            "total_tokens": c.total_prompt_tokens + c.total_completion_tokens,
+            "total_requests": c.total_requests,
         }
         for c in clients
     ]
@@ -486,6 +490,10 @@ def handle_get_client(client_id: str) -> str:
         "created_at": client.created_at,
         "last_used_at": client.last_used_at,
         "notes": client.notes,
+        "total_prompt_tokens": client.total_prompt_tokens,
+        "total_completion_tokens": client.total_completion_tokens,
+        "total_tokens": client.total_prompt_tokens + client.total_completion_tokens,
+        "total_requests": client.total_requests,
     }, indent=2)
 
 

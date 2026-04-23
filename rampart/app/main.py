@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from rampart.app.client_store import ClientRecord, client_context_from_record, resolve_client_from_api_key
+from rampart.app.client_store import ClientRecord, client_context_from_record, record_token_usage, resolve_client_from_api_key
 from rampart.app.config import AppConfig, PolicyConfig, UpstreamConfig, get_config
 from rampart.app.models import EvaluationRequest, EvaluationResponse, HealthResponse
 from rampart.app.openai.proxy import openai_policy_error, proxy_chat_completion
@@ -68,6 +68,15 @@ async def evaluate_chat_completions(payload: dict[str, Any], request: Request):
     upstream_payload = response.sanitized_request if response.violations and response.sanitized_request else payload
     upstream_payload = _apply_model_override(upstream_payload, upstream.model)
     upstream_body, upstream_status = await proxy_chat_completion(upstream, upstream_payload)
+    if client_record and isinstance(upstream_body, dict):
+        usage = upstream_body.get("usage")
+        if isinstance(usage, dict):
+            record_token_usage(
+                client_record.id,
+                usage.get("prompt_tokens", 0),
+                usage.get("completion_tokens", 0),
+                config.clients.path,
+            )
     return JSONResponse(upstream_body, status_code=upstream_status)
 
 

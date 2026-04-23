@@ -33,6 +33,9 @@ class ClientRecord(BaseModel):
     key_hash: str
     created_at: str
     last_used_at: Optional[str] = None
+    total_prompt_tokens: int = 0
+    total_completion_tokens: int = 0
+    total_requests: int = 0
 
 
 class ClientStore(BaseModel):
@@ -140,6 +143,18 @@ def delete_client(client_id: str, path: Optional[str] = None) -> None:
     if len(store.clients) == original_count:
         raise ValueError(f"Client '{client_id}' was not found.")
     save_client_store(store, path)
+
+
+def record_token_usage(client_id: str, prompt_tokens: int, completion_tokens: int, path: Optional[str] = None) -> None:
+    store = load_client_store(path)
+    for client in store.clients:
+        if client.id == client_id:
+            client.total_prompt_tokens += prompt_tokens
+            client.total_completion_tokens += completion_tokens
+            client.total_requests += 1
+            client.last_used_at = _now()
+            save_client_store(store, path)
+            return
 
 
 def set_client_enabled(client_id: str, enabled: bool, path: Optional[str] = None) -> None:

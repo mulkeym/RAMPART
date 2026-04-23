@@ -281,11 +281,12 @@ async def clients_index(request: Request, message: Optional[str] = None, api_key
               <th>App</th>
               <th>Owner</th>
               <th>Status</th>
+              <th>Tokens</th>
               <th>Last Used</th>
               <th></th>
             </tr>
           </thead>
-          <tbody>{rows or _empty_row(7, "No API keys have been created yet.")}</tbody>
+          <tbody>{rows or _empty_row(8, "No API keys have been created yet.")}</tbody>
         </table>
       </section>
     """
@@ -631,6 +632,7 @@ def _client_row(client: ClientRecord) -> str:
         <td>{escape(client.app_name)}<div class="muted">{escape(client.environment)}</div></td>
         <td>{escape(owner)}</td>
         <td><span class="pill {status}">{status}</span></td>
+        <td><span style="font-size:12px">{_format_tokens(client.total_prompt_tokens + client.total_completion_tokens)}</span><div class="muted" style="font-size:10px">{client.total_requests} req &middot; {_format_tokens(client.total_prompt_tokens)} in &middot; {_format_tokens(client.total_completion_tokens)} out</div></td>
         <td><code>{escape(client.last_used_at or "")}</code></td>
         <td class="row-actions">
           <a class="button small" href="/ui/clients/{escape(client.id)}">Edit</a>
@@ -856,6 +858,14 @@ def _policy_hit_counts(events: list) -> dict:
             pid = v.get("policy_id", "")
             counts[pid] = counts.get(pid, 0) + 1
     return counts
+
+
+def _format_tokens(count: int) -> str:
+    if count >= 1_000_000:
+        return f"{count / 1_000_000:.1f}M"
+    if count >= 1_000:
+        return f"{count / 1_000:.1f}K"
+    return str(count)
 
 
 def _policy_stats_cards(config, events: list) -> str:
