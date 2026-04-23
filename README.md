@@ -179,6 +179,67 @@ upstream:
   timeout_seconds: 120.0
 ```
 
+## Playground
+
+The interactive playground lets you test prompts against policies without sending
+real traffic. Compose multimodal messages (text + images), select policies or
+create ad-hoc rules, and see per-policy pass/fail results, the sanitized request,
+and optionally the upstream LLM response.
+
+```text
+http://localhost:8080/ui/playground
+```
+
+## MCP Server
+
+RAMPART exposes an MCP (Model Context Protocol) interface for LLM-driven
+administration. An LLM can manage policies, create API key clients, assign
+policies, evaluate prompts, and monitor violations.
+
+Enable the MCP endpoint by setting an admin key:
+
+```bash
+export RAMPART_MCP_ADMIN_KEY='your-secret-admin-key'
+```
+
+The endpoint accepts JSON-RPC 2.0 POST requests at `/mcp`:
+
+```bash
+curl -s -X POST http://localhost:8080/mcp \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer your-secret-admin-key" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+```
+
+### Available MCP Tools
+
+| Category | Tools |
+|----------|-------|
+| Policy Management | `list_policies`, `get_policy`, `create_policy`, `update_policy`, `delete_policy` |
+| Client Management | `list_clients`, `get_client`, `create_client`, `update_client`, `toggle_client`, `rotate_client_key` |
+| Policy Assignment | `assign_policies` |
+| Evaluation | `evaluate_prompt` |
+| Monitoring | `get_violations` |
+
 ## Configuration
 
 The service loads `policies/default.yaml` unless `RAMPART_POLICY_FILE` is set.
+
+### Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `RAMPART_POLICY_FILE` | Path to policy YAML file |
+| `RAMPART_ADMIN_USERNAME` | Admin username (default: `admin`) |
+| `RAMPART_ADMIN_PASSWORD_HASH` | Admin password hash (disables UI password changes) |
+| `RAMPART_SESSION_SECRET` | Session signing secret |
+| `RAMPART_AUDIT_LOG` | Audit log path |
+| `RAMPART_MCP_ADMIN_KEY` | MCP admin API key (enables `/mcp` endpoint) |
+| `RAMPART_UPSTREAM_ENABLED` | Enable/disable upstream LLM proxying |
+| `RAMPART_UPSTREAM_BASE_URL` | Upstream LLM API base URL |
+| `RAMPART_UPSTREAM_MODEL` | Override upstream model name |
+| `RAMPART_UPSTREAM_API_KEY` | Upstream LLM API key |
+| `RAMPART_TRACKING_ENABLED` | Enable/disable violation tracking |
+| `RAMPART_EVALUATION_LOG` | Evaluation log path |
+| `RAMPART_CLIENT_STORE` | Client store JSON path |
+| `RAMPART_SETTINGS_FILE` | Runtime settings JSON path |
