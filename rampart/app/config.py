@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 class LlmEvaluatorConfig(BaseModel):
     enabled: bool = False
-    base_url: str = "http://192.168.1.181:8081"
+    base_url: str = "http://192.168.1.181:8080/v1"
     model: str = "gemma4-e2b"
     timeout_seconds: float = 20.0
     fail_closed_on_error: bool = True
@@ -18,7 +18,7 @@ class LlmEvaluatorConfig(BaseModel):
 
 class VisionEvaluatorConfig(BaseModel):
     enabled: bool = False
-    base_url: str = "http://192.168.1.181:8082"
+    base_url: str = "http://192.168.1.181:8081/v1"
     model: str = ""
     timeout_seconds: float = 30.0
     fail_closed_on_error: bool = True
@@ -59,7 +59,7 @@ class TrackingConfig(BaseModel):
 
 class UpstreamConfig(BaseModel):
     enabled: bool = True
-    base_url: str = "http://192.168.1.181:8081"
+    base_url: str = "http://192.168.1.181:8000/v1"
     model: str = ""
     api_key: str = ""
     timeout_seconds: float = 120.0
