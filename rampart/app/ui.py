@@ -230,6 +230,7 @@ async def update_settings(request: Request) -> HTMLResponse:
             llm_evaluator_base_url=form.get("llm_evaluator_base_url", "").strip(),
             llm_evaluator_model=form.get("llm_evaluator_model", "").strip(),
             llm_evaluator_timeout_seconds=_optional_float(form.get("llm_evaluator_timeout_seconds", "")),
+            vision_evaluator_enabled=form.get("vision_evaluator_enabled") == "on",
             vision_evaluator_base_url=form.get("vision_evaluator_base_url", "").strip(),
             vision_evaluator_model=form.get("vision_evaluator_model", "").strip(),
             vision_evaluator_timeout_seconds=_optional_float(form.get("vision_evaluator_timeout_seconds", "")),
@@ -643,6 +644,10 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
         <fieldset class="fieldset">
           <legend>Vision Evaluator LLM</legend>
           <div class="hint">Used for evaluating image content against policies. Requires a vision-capable model.</div>
+          <div>
+            <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;color:var(--text-secondary)">Enabled <input type="checkbox" name="vision_evaluator_enabled" {"checked" if config.vision_evaluator.enabled else ""} style="width:auto"></label>
+            <div class="hint" style="margin-top:4px">When enabled, images in requests are evaluated against LLM policies using this vision model.</div>
+          </div>
           <label>Base URL<input name="vision_evaluator_base_url" value="{get_value("vision_evaluator_base_url", config.vision_evaluator.base_url)}" placeholder="{escape(config.vision_evaluator.base_url)}"></label>
           <label>Model<input name="vision_evaluator_model" value="{get_value("vision_evaluator_model", config.vision_evaluator.model)}" placeholder="{escape(config.vision_evaluator.model)}"></label>
           <label>Timeout Seconds<input name="vision_evaluator_timeout_seconds" value="{get_value("vision_evaluator_timeout_seconds", config.vision_evaluator.timeout_seconds)}" inputmode="decimal"></label>

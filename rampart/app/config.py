@@ -183,6 +183,8 @@ def _apply_local_settings(config: AppConfig) -> None:
         config.upstream.api_key = settings.upstream_api_key
     if settings.upstream_timeout_seconds is not None:
         config.upstream.timeout_seconds = settings.upstream_timeout_seconds
+    if settings.vision_evaluator_enabled is not None:
+        config.vision_evaluator.enabled = settings.vision_evaluator_enabled
     if settings.vision_evaluator_base_url:
         config.vision_evaluator.base_url = settings.vision_evaluator_base_url
     if settings.vision_evaluator_model:
