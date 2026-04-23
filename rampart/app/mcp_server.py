@@ -13,6 +13,7 @@ from rampart.app.client_store import (
     ClientRecord, create_client as store_create_client, get_client, list_clients,
     rotate_client_key as store_rotate_key, set_client_enabled, update_client as store_update_client,
 )
+from rampart.app.tracking import load_evaluation_events
 
 router = APIRouter()
 
@@ -502,3 +503,107 @@ def handle_assign_policies(client_id: str, policy_ids: list) -> str:
     client.policy_ids = [str(pid) for pid in policy_ids]
     store_update_client(client, config.clients.path)
     return json.dumps({"client_id": client_id, "policy_ids": client.policy_ids})
+
+
+# --- Evaluation ---
+
+@_handler(
+    "evaluate_prompt",
+    "Evaluate a prompt against policies without logging or sending to upstream. Returns decision, violations, and sanitized request.",
+    {
+        "type": "object",
+        "properties": {
+            "messages": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": "OpenAI-format messages array, e.g. [{\"role\": \"user\", \"content\": \"hello\"}]",
+            },
+            "policy_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Specific policy IDs to evaluate. Omit to use all enabled policies.",
+            },
+        },
+        "required": ["messages"],
+    },
+)
+async def handle_evaluate_prompt(messages: list, policy_ids: Optional[list] = None) -> str:
+    from rampart.app.policy.engine import PolicyEngine
+
+    config = get_config()
+    if policy_ids:
+        policies = [p.model_copy() for p in config.policies if p.id in set(policy_ids)]
+    else:
+        policies = [p.model_copy() for p in config.policies if p.enabled]
+    for p in policies:
+        p.enabled = True
+
+    engine = PolicyEngine(config, policies)
+    openai_request = {"messages": messages}
+    response = await engine.evaluate(openai_request)
+
+    result = {
+        "decision": response.decision,
+        "violations": [
+            {
+                "policy_id": v.policy_id,
+                "severity": v.severity,
+                "category": v.category,
+                "message": v.message,
+                "source": v.source,
+                "path": v.path,
+            }
+            for v in response.violations
+        ],
+        "policies_evaluated": [p.id for p in policies],
+    }
+    if response.sanitized_request:
+        result["sanitized_request"] = response.sanitized_request
+    return json.dumps(result, indent=2)
+
+
+# --- Monitoring ---
+
+@_handler(
+    "get_violations",
+    "Query recent violation events. Optionally filter by customer or client ID.",
+    {
+        "type": "object",
+        "properties": {
+            "customer": {"type": "string", "description": "Filter by customer name"},
+            "client_id": {"type": "string", "description": "Filter by client ID"},
+            "limit": {"type": "integer", "default": 50, "description": "Max events to return (default 50)"},
+        },
+        "required": [],
+    },
+)
+def handle_get_violations(
+    customer: Optional[str] = None,
+    client_id: Optional[str] = None,
+    limit: int = 50,
+) -> str:
+    config = get_config()
+    events = load_evaluation_events(config.tracking.log_path)
+    failed = [e for e in events if e.get("decision") == "fail"]
+    if customer:
+        failed = [e for e in failed if e.get("customer") == customer]
+    if client_id:
+        failed = [e for e in failed if e.get("client_id") == client_id]
+    failed.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
+    limited = failed[:limit]
+    result = {
+        "total_events": len(failed),
+        "returned": len(limited),
+        "events": [
+            {
+                "timestamp": e.get("timestamp"),
+                "customer": e.get("customer"),
+                "client_id": e.get("client_id"),
+                "decision": e.get("decision"),
+                "violation_count": len(e.get("violations", [])),
+                "violations": e.get("violations", []),
+            }
+            for e in limited
+        ],
+    }
+    return json.dumps(result, indent=2)
