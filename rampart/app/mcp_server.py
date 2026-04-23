@@ -305,7 +305,7 @@ def handle_get_policy(policy_id: str) -> str:
 
 @_handler(
     "create_policy",
-    "Create a new POLICY rule for content filtering. NOT for creating API keys — use create_client for that. Checks are provided as a YAML string. Example checks_yaml: '- type: regex\\n  pattern: \"(?i)password\"'",
+    "Create a new POLICY rule for content filtering. NOT for creating API keys — use create_client for that. Provide checks as JSON array (preferred) or YAML string. Example checks: [{\"type\": \"llm\", \"instruction\": \"Block requests about puppies\"}]",
     {
         "type": "object",
         "properties": {
@@ -314,39 +314,48 @@ def handle_get_policy(policy_id: str) -> str:
             "category": {"type": "string", "default": "policy"},
             "description": {"type": "string", "default": ""},
             "action": {"type": "string", "enum": ["block", "warn"], "default": "block"},
-            "checks_yaml": {"type": "string", "description": "YAML list of check configs"},
+            "checks": {"type": "array", "items": {"type": "object"}, "description": "Check configs as JSON array. Preferred over checks_yaml."},
+            "checks_yaml": {"type": "string", "description": "Check configs as YAML string. Alternative to checks."},
         },
-        "required": ["id", "checks_yaml"],
+        "required": ["id"],
     },
 )
 def handle_create_policy(
     id: str,
-    checks_yaml: str,
     severity: str = "medium",
     category: str = "policy",
     description: str = "",
     action: str = "block",
+    checks: Optional[list] = None,
+    checks_yaml: Optional[str] = None,
 ) -> str:
     if get_policy(id) is not None:
         return json.dumps({"error": f"Policy '{id}' already exists."})
+    checks_data = None
+    if checks is not None:
+        checks_data = checks
+    elif checks_yaml is not None:
+        try:
+            checks_data = yaml.safe_load(checks_yaml) or []
+        except Exception as e:
+            return json.dumps({"error": f"Invalid checks_yaml: {e}"})
+    if not checks_data or not isinstance(checks_data, list):
+        return json.dumps({"error": "checks (JSON array) or checks_yaml (YAML string) is required."})
     try:
-        checks_data = yaml.safe_load(checks_yaml) or []
-        if not isinstance(checks_data, list):
-            return json.dumps({"error": "checks_yaml must be a YAML list."})
-        checks = [CheckConfig.model_validate(c) for c in checks_data]
+        parsed_checks = [CheckConfig.model_validate(c) for c in checks_data]
     except Exception as e:
-        return json.dumps({"error": f"Invalid checks_yaml: {e}"})
+        return json.dumps({"error": f"Invalid check config: {e}"})
     policy = PolicyConfig(
         id=id, enabled=True, severity=severity, category=category,
-        description=description, action=action, checks=checks,
+        description=description, action=action, checks=parsed_checks,
     )
     upsert_policy(policy)
-    return json.dumps({"created": id, "severity": severity, "action": action, "check_count": len(checks)})
+    return json.dumps({"created": id, "severity": severity, "action": action, "check_count": len(parsed_checks)})
 
 
 @_handler(
     "update_policy",
-    "Update an existing policy. Only provided fields are changed. Omit fields to keep their current values.",
+    "Update an existing policy. Only provided fields are changed. Omit fields to keep current values. For checks, use EITHER checks (JSON array) OR checks_yaml (YAML string). Preferred: checks as JSON array, e.g. [{\"type\": \"llm\", \"instruction\": \"Block puppies\"}]",
     {
         "type": "object",
         "properties": {
@@ -356,7 +365,8 @@ def handle_create_policy(
             "description": {"type": "string"},
             "action": {"type": "string", "enum": ["block", "warn"]},
             "enabled": {"type": "boolean"},
-            "checks_yaml": {"type": "string", "description": "YAML list of check configs"},
+            "checks": {"type": "array", "items": {"type": "object"}, "description": "Check configs as JSON array. Preferred over checks_yaml."},
+            "checks_yaml": {"type": "string", "description": "Check configs as YAML string. Alternative to checks."},
         },
         "required": ["policy_id"],
     },
@@ -368,6 +378,7 @@ def handle_update_policy(
     description: Optional[str] = None,
     action: Optional[str] = None,
     enabled: Optional[bool] = None,
+    checks: Optional[list] = None,
     checks_yaml: Optional[str] = None,
 ) -> str:
     policy = get_policy(policy_id)
@@ -383,14 +394,21 @@ def handle_update_policy(
         policy.action = action
     if enabled is not None:
         policy.enabled = enabled
-    if checks_yaml is not None:
+    checks_data = None
+    if checks is not None:
+        checks_data = checks
+    elif checks_yaml is not None:
         try:
             checks_data = yaml.safe_load(checks_yaml) or []
-            if not isinstance(checks_data, list):
-                return json.dumps({"error": "checks_yaml must be a YAML list."})
-            policy.checks = [CheckConfig.model_validate(c) for c in checks_data]
         except Exception as e:
             return json.dumps({"error": f"Invalid checks_yaml: {e}"})
+    if checks_data is not None:
+        if not isinstance(checks_data, list):
+            return json.dumps({"error": "checks must be a list."})
+        try:
+            policy.checks = [CheckConfig.model_validate(c) for c in checks_data]
+        except Exception as e:
+            return json.dumps({"error": f"Invalid check config: {e}"})
     upsert_policy(policy)
     return json.dumps({"updated": policy_id})
 
