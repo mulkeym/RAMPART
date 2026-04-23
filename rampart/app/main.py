@@ -10,6 +10,7 @@ from rampart.app.models import EvaluationRequest, EvaluationResponse, HealthResp
 from rampart.app.openai.proxy import openai_policy_error, proxy_chat_completion
 from rampart.app.policy.engine import PolicyEngine
 from rampart.app.tracking import ClientContext, write_evaluation_event
+from rampart.app.playground import router as playground_router
 from rampart.app.ui import router as ui_router
 
 app = FastAPI(
@@ -18,6 +19,7 @@ app = FastAPI(
     version="0.1.0",
 )
 app.include_router(ui_router)
+app.include_router(playground_router)
 
 
 @app.get("/health", response_model=HealthResponse)
