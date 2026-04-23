@@ -30,7 +30,7 @@ class LlmEvaluator:
         if not policies_with_llm_checks:
             return []
 
-        request_json = json.dumps(request, sort_keys=True, ensure_ascii=True)
+        request_json = json.dumps(_strip_image_data(request), sort_keys=True, ensure_ascii=True)
         violations: list[Violation] = []
         for policy, check in policies_with_llm_checks:
             result = await self._evaluate_policy_check(request_json, policy, check)
@@ -83,6 +83,30 @@ class LlmEvaluator:
                 source="llm",
             )
         ]
+
+
+def _strip_image_data(request: dict[str, Any]) -> dict[str, Any]:
+    """Remove base64 image data from the request before sending to the evaluator LLM.
+
+    The evaluator checks text-based policies and does not need raw image bytes.
+    Replacing them with a placeholder avoids exceeding token limits.
+    """
+    from copy import deepcopy
+
+    stripped = deepcopy(request)
+    for message in stripped.get("messages") or []:
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            image_url = part.get("image_url")
+            if isinstance(image_url, dict) and isinstance(image_url.get("url"), str):
+                url = image_url["url"]
+                if url.startswith("data:"):
+                    image_url["url"] = "[base64 image omitted]"
+    return stripped
 
 
 def _strip_json_fence(content: str) -> str:
