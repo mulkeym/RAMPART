@@ -1005,6 +1005,7 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{escape(title)} - RAMPART</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%2338bdf8'/%3E%3Cstop offset='1' stop-color='%230e7490'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M32 2L6 14v18c0 16.6 11.1 31.1 26 34 14.9-2.9 26-17.4 26-34V14L32 2z' fill='%230b0f14' stroke='url(%23g)' stroke-width='3'/%3E%3Cpath d='M32 12L14 20v12c0 11 7.4 20.7 18 22.6 10.6-1.9 18-11.6 18-22.6V20L32 12z' fill='none' stroke='%2338bdf8' stroke-width='1.5' opacity='.3'/%3E%3Cpath d='M26 30h12M26 36h12M26 42h8' stroke='%2338bdf8' stroke-width='2.5' stroke-linecap='round'/%3E%3Ccircle cx='21' cy='30' r='2' fill='%234ade80'/%3E%3Ccircle cx='21' cy='36' r='2' fill='%234ade80'/%3E%3Ccircle cx='21' cy='42' r='2' fill='%23f87171'/%3E%3Cpath d='M32 12L14 20v12c0 11 7.4 20.7 18 22.6' fill='%2338bdf8' opacity='.06'/%3E%3C/svg%3E">
   <style>
     :root {{
       color-scheme: dark;
