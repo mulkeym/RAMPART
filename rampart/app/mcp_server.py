@@ -9,6 +9,10 @@ from fastapi.responses import JSONResponse
 
 from rampart.app.config import CheckConfig, PolicyConfig, get_config
 from rampart.app.policy_store import delete_policy as store_delete_policy, get_policy, list_policies, upsert_policy
+from rampart.app.client_store import (
+    ClientRecord, create_client as store_create_client, get_client, list_clients,
+    rotate_client_key as store_rotate_key, set_client_enabled, update_client as store_update_client,
+)
 
 router = APIRouter()
 
@@ -276,3 +280,225 @@ def handle_delete_policy(policy_id: str) -> str:
         return json.dumps({"error": f"Policy '{policy_id}' not found."})
     store_delete_policy(policy_id)
     return json.dumps({"deleted": policy_id})
+
+
+# --- Client Management Tools ---
+
+@_handler(
+    "list_clients",
+    "List all API key clients with their ID, customer, app, team, status, assigned policies, and last used timestamp.",
+    {"type": "object", "properties": {}, "required": []},
+)
+def handle_list_clients() -> str:
+    config = get_config()
+    clients = list_clients(config.clients.path)
+    result = [
+        {
+            "id": c.id,
+            "customer": c.customer,
+            "app_name": c.app_name,
+            "team": c.team,
+            "environment": c.environment,
+            "enabled": c.enabled,
+            "policy_ids": c.policy_ids,
+            "last_used_at": c.last_used_at,
+        }
+        for c in clients
+    ]
+    return json.dumps(result, indent=2)
+
+
+@_handler(
+    "get_client",
+    "Get a single client by ID, including all metadata and assigned policies.",
+    {
+        "type": "object",
+        "properties": {
+            "client_id": {"type": "string", "description": "The client ID to retrieve"},
+        },
+        "required": ["client_id"],
+    },
+)
+def handle_get_client(client_id: str) -> str:
+    config = get_config()
+    client = get_client(client_id, config.clients.path)
+    if client is None:
+        return json.dumps({"error": f"Client '{client_id}' not found."})
+    return json.dumps({
+        "id": client.id,
+        "customer": client.customer,
+        "app_name": client.app_name,
+        "owner_name": client.owner_name,
+        "owner_email": client.owner_email,
+        "team": client.team,
+        "environment": client.environment,
+        "enabled": client.enabled,
+        "policy_ids": client.policy_ids,
+        "created_at": client.created_at,
+        "last_used_at": client.last_used_at,
+        "notes": client.notes,
+    }, indent=2)
+
+
+@_handler(
+    "create_client",
+    "Create a new API key client. Returns the client info and the raw API key (shown only once).",
+    {
+        "type": "object",
+        "properties": {
+            "client_id": {"type": "string", "description": "Unique client identifier"},
+            "customer": {"type": "string", "description": "Customer name"},
+            "app_name": {"type": "string", "description": "Application name"},
+            "owner_name": {"type": "string", "default": ""},
+            "owner_email": {"type": "string", "default": ""},
+            "team": {"type": "string", "default": ""},
+            "environment": {"type": "string", "default": "production"},
+            "policy_ids": {"type": "array", "items": {"type": "string"}, "default": [], "description": "Policies to assign. Empty means all enabled policies apply."},
+        },
+        "required": ["client_id", "customer", "app_name"],
+    },
+)
+def handle_create_client(
+    client_id: str,
+    customer: str,
+    app_name: str,
+    owner_name: str = "",
+    owner_email: str = "",
+    team: str = "",
+    environment: str = "production",
+    policy_ids: Optional[list] = None,
+) -> str:
+    config = get_config()
+    try:
+        created = store_create_client(
+            client_id=client_id, customer=customer, app_name=app_name,
+            owner_name=owner_name, owner_email=owner_email, team=team,
+            environment=environment, policy_ids=policy_ids,
+            path=config.clients.path,
+        )
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+    return json.dumps({
+        "client": {
+            "id": created.client.id, "customer": created.client.customer,
+            "app_name": created.client.app_name, "team": created.client.team,
+            "environment": created.client.environment, "enabled": created.client.enabled,
+            "policy_ids": created.client.policy_ids,
+        },
+        "api_key": created.api_key,
+    }, indent=2)
+
+
+@_handler(
+    "update_client",
+    "Update an existing client. Only provided fields are changed.",
+    {
+        "type": "object",
+        "properties": {
+            "client_id": {"type": "string", "description": "The client ID to update"},
+            "customer": {"type": "string"},
+            "app_name": {"type": "string"},
+            "owner_name": {"type": "string"},
+            "owner_email": {"type": "string"},
+            "team": {"type": "string"},
+            "environment": {"type": "string"},
+            "notes": {"type": "string"},
+        },
+        "required": ["client_id"],
+    },
+)
+def handle_update_client(
+    client_id: str,
+    customer: Optional[str] = None,
+    app_name: Optional[str] = None,
+    owner_name: Optional[str] = None,
+    owner_email: Optional[str] = None,
+    team: Optional[str] = None,
+    environment: Optional[str] = None,
+    notes: Optional[str] = None,
+) -> str:
+    config = get_config()
+    client = get_client(client_id, config.clients.path)
+    if client is None:
+        return json.dumps({"error": f"Client '{client_id}' not found."})
+    if customer is not None:
+        client.customer = customer
+    if app_name is not None:
+        client.app_name = app_name
+    if owner_name is not None:
+        client.owner_name = owner_name
+    if owner_email is not None:
+        client.owner_email = owner_email
+    if team is not None:
+        client.team = team
+    if environment is not None:
+        client.environment = environment
+    if notes is not None:
+        client.notes = notes
+    store_update_client(client, config.clients.path)
+    return json.dumps({"updated": client_id})
+
+
+@_handler(
+    "toggle_client",
+    "Enable or disable an API key client.",
+    {
+        "type": "object",
+        "properties": {
+            "client_id": {"type": "string", "description": "The client ID to toggle"},
+            "enabled": {"type": "boolean", "description": "True to enable, false to disable"},
+        },
+        "required": ["client_id", "enabled"],
+    },
+)
+def handle_toggle_client(client_id: str, enabled: bool) -> str:
+    config = get_config()
+    try:
+        set_client_enabled(client_id, enabled, config.clients.path)
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+    return json.dumps({"client_id": client_id, "enabled": enabled})
+
+
+@_handler(
+    "rotate_client_key",
+    "Rotate the API key for a client. Returns the new key (shown only once). The old key is invalidated.",
+    {
+        "type": "object",
+        "properties": {
+            "client_id": {"type": "string", "description": "The client ID whose key to rotate"},
+        },
+        "required": ["client_id"],
+    },
+)
+def handle_rotate_client_key(client_id: str) -> str:
+    config = get_config()
+    try:
+        created = store_rotate_key(client_id, config.clients.path)
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+    return json.dumps({"client_id": client_id, "api_key": created.api_key})
+
+
+# --- Policy Assignment ---
+
+@_handler(
+    "assign_policies",
+    "Set which policies apply to a client. Pass an empty list to use all enabled policies.",
+    {
+        "type": "object",
+        "properties": {
+            "client_id": {"type": "string", "description": "The client ID to assign policies to"},
+            "policy_ids": {"type": "array", "items": {"type": "string"}, "description": "List of policy IDs. Empty means all enabled policies apply."},
+        },
+        "required": ["client_id", "policy_ids"],
+    },
+)
+def handle_assign_policies(client_id: str, policy_ids: list) -> str:
+    config = get_config()
+    client = get_client(client_id, config.clients.path)
+    if client is None:
+        return json.dumps({"error": f"Client '{client_id}' not found."})
+    client.policy_ids = [str(pid) for pid in policy_ids]
+    store_update_client(client, config.clients.path)
+    return json.dumps({"client_id": client_id, "policy_ids": client.policy_ids})
