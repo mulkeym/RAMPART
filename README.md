@@ -4,7 +4,17 @@ RAMPART is a prompt and tool-calling firewall for OpenAI-compatible API requests
 
 `RAMPART` stands for **Request And Model Prompt Analysis & Routing Tool**.
 
-## Run with Docker
+## Quick Start
+
+Pull and run from GitHub Container Registry:
+
+```bash
+docker run -d -p 8080:8080 --name rampart ghcr.io/mulkeym/rampart:latest
+```
+
+Open `http://localhost:8080` and log in with `admin` / `password123`.
+
+## Run with Docker Compose
 
 ```bash
 docker compose up -d
