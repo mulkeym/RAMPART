@@ -18,7 +18,7 @@ from rampart.app.security.credentials import change_password
 from rampart.app.settings_store import RuntimeSettings, load_settings, save_settings
 from rampart.app.tracking import load_evaluation_events, summarize_customers, summarize_policies
 
-router = APIRouter()
+router = APIRouter(include_in_schema=False)
 
 
 @router.get("/", response_class=HTMLResponse)

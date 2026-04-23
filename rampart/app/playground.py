@@ -15,7 +15,7 @@ from rampart.app.security.audit import audit_event
 from rampart.app.security.auth import read_session_user, require_ui_user
 from rampart.app.ui import _page, _severity_pill
 
-router = APIRouter()
+router = APIRouter(include_in_schema=False)
 
 
 @router.get("/ui/playground", response_class=HTMLResponse)

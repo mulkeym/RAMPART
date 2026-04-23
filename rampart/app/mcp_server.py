@@ -70,7 +70,7 @@ def _validate_admin_key(request: Request) -> Optional[JSONResponse]:
     return None
 
 
-@router.post("/mcp")
+@router.post("/mcp", include_in_schema=False)
 async def mcp_endpoint(request: Request) -> JSONResponse:
     auth_error = _validate_admin_key(request)
     if auth_error:
