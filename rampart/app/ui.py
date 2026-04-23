@@ -918,7 +918,53 @@ def _password_change_pending(username: str) -> bool:
 
 
 def _page_script() -> str:
-    return ""
+    return """<script>
+(function(){
+  var overlay=document.createElement('div');
+  overlay.className='modal-overlay';
+  overlay.innerHTML='<div class="modal"><h2 id="modal-title"></h2><p id="modal-msg"></p><div class="actions"><button class="button" id="modal-cancel">Cancel</button><button class="button danger" id="modal-confirm">Confirm</button></div></div>';
+  document.body.appendChild(overlay);
+  var pendingForm=null;
+  document.getElementById('modal-cancel').onclick=function(){overlay.classList.remove('active');pendingForm=null;};
+  overlay.onclick=function(e){if(e.target===overlay){overlay.classList.remove('active');pendingForm=null;}};
+  document.querySelectorAll('form.confirm-action').forEach(function(form){
+    form.addEventListener('submit',function(e){
+      e.preventDefault();
+      pendingForm=form;
+      document.getElementById('modal-title').textContent=form.dataset.confirmTitle||'Are you sure?';
+      document.getElementById('modal-msg').textContent=form.dataset.confirmMessage||'This action cannot be undone.';
+      overlay.classList.add('active');
+    });
+  });
+  document.getElementById('modal-confirm').onclick=function(){
+    overlay.classList.remove('active');
+    if(pendingForm){pendingForm.classList.remove('confirm-action');pendingForm.submit();}
+  };
+  document.querySelectorAll('form.panel.form').forEach(function(form){
+    var inputs=form.querySelectorAll('input[required],textarea[required]');
+    inputs.forEach(function(input){
+      input.addEventListener('blur',function(){validateField(input);});
+    });
+    form.addEventListener('submit',function(e){
+      var valid=true;
+      inputs.forEach(function(input){if(!validateField(input))valid=false;});
+      if(!valid)e.preventDefault();
+    });
+  });
+  function validateField(input){
+    var err=input.parentNode.querySelector('.field-error');
+    if(!input.value.trim()){
+      input.classList.add('invalid');
+      if(!err){err=document.createElement('div');err.className='field-error';err.textContent=input.previousElementSibling?input.previousElementSibling.textContent+' is required':'This field is required';input.parentNode.appendChild(err);}
+      return false;
+    }else{
+      input.classList.remove('invalid');
+      if(err)err.remove();
+      return true;
+    }
+  }
+})();
+</script>"""
 
 
 def _page(title: str, body: str, actor: Optional[str] = None) -> str:
