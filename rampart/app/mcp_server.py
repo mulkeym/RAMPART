@@ -305,7 +305,7 @@ def handle_get_policy(policy_id: str) -> str:
 
 @_handler(
     "create_policy",
-    "Create a new policy. Checks are provided as a YAML string. Example checks_yaml: '- type: regex\\n  pattern: \"(?i)password\"'",
+    "Create a new POLICY rule for content filtering. NOT for creating API keys — use create_client for that. Checks are provided as a YAML string. Example checks_yaml: '- type: regex\\n  pattern: \"(?i)password\"'",
     {
         "type": "object",
         "properties": {
@@ -397,7 +397,7 @@ def handle_update_policy(
 
 @_handler(
     "delete_policy",
-    "Delete a policy by ID.",
+    "Delete a POLICY rule by its policy ID. Do NOT use this to delete API keys or clients — use delete_client instead.",
     {
         "type": "object",
         "properties": {
@@ -473,7 +473,7 @@ def handle_get_client(client_id: str) -> str:
 
 @_handler(
     "create_client",
-    "Create a new API key client. Returns the client info and the raw API key (shown only once).",
+    "Create a new API key/client account. Use this to create API keys for customers and apps. Returns the client info and the raw API key (shown only once). NOT for creating policies — use create_policy for that.",
     {
         "type": "object",
         "properties": {
@@ -613,7 +613,7 @@ def handle_rotate_client_key(client_id: str) -> str:
 
 @_handler(
     "delete_client",
-    "Permanently delete an API key client. This cannot be undone.",
+    "Permanently delete an API key/client by its client ID. Use this to remove API keys and client accounts. This cannot be undone.",
     {
         "type": "object",
         "properties": {
