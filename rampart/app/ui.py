@@ -9,7 +9,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import ValidationError
 
-from rampart.app.client_store import ClientRecord, create_client, get_client, list_clients, rotate_client_key, set_client_enabled, update_client
+from rampart.app.client_store import ClientRecord, create_client, delete_client as store_delete_client, get_client, list_clients, rotate_client_key, set_client_enabled, update_client
 from rampart.app.config import CheckConfig, PolicyConfig, get_config, get_policy_path
 from rampart.app.policy_store import delete_policy, get_policy, upsert_policy
 from rampart.app.security.audit import audit_event
@@ -401,6 +401,20 @@ async def rotate_client(client_id: str, request: Request) -> RedirectResponse:
     return RedirectResponse(f"/ui/clients?message=API+key+rotated&api_key={quote(created.api_key)}", status_code=303)
 
 
+@router.post("/ui/clients/{client_id}/delete", response_class=HTMLResponse)
+async def delete_client_route(client_id: str, request: Request) -> RedirectResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        audit_event(request, "client.delete", target=client_id, result="failure", detail="unauthorized")
+        return redirect
+    try:
+        store_delete_client(client_id, get_config().clients.path)
+    except ValueError:
+        return RedirectResponse("/ui/clients?message=Client+not+found", status_code=303)
+    audit_event(request, "client.delete", actor=read_session_user(request), target=client_id, result="success")
+    return RedirectResponse("/ui/clients?message=Client+deleted", status_code=303)
+
+
 @router.get("/ui/policies/new", response_class=HTMLResponse)
 async def new_policy(request: Request) -> HTMLResponse:
     redirect = require_ui_user(request)
@@ -623,6 +637,9 @@ def _client_row(client: ClientRecord) -> str:
           </form>
           <form class="confirm-action" method="post" action="/ui/clients/{escape(client.id)}/rotate" data-confirm-title="Rotate API Key?" data-confirm-message="This will invalidate the current API key for {escape(client.id)}. The new key will be shown only once.">
             <button class="button small danger" type="submit">Rotate</button>
+          </form>
+          <form class="confirm-action" method="post" action="/ui/clients/{escape(client.id)}/delete" data-confirm-title="Delete Client?" data-confirm-message="Permanently delete client {escape(client.id)}? This cannot be undone.">
+            <button class="button small danger" type="submit">Delete</button>
           </form>
         </td>
       </tr>

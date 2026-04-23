@@ -10,8 +10,9 @@ from fastapi.responses import JSONResponse
 from rampart.app.config import CheckConfig, PolicyConfig, get_config
 from rampart.app.policy_store import delete_policy as store_delete_policy, get_policy, list_policies, upsert_policy
 from rampart.app.client_store import (
-    ClientRecord, create_client as store_create_client, get_client, list_clients,
-    rotate_client_key as store_rotate_key, set_client_enabled, update_client as store_update_client,
+    ClientRecord, create_client as store_create_client, delete_client as store_delete_client_record,
+    get_client, list_clients, rotate_client_key as store_rotate_key,
+    set_client_enabled, update_client as store_update_client,
 )
 from rampart.app.tracking import load_evaluation_events
 
@@ -580,6 +581,26 @@ def handle_rotate_client_key(client_id: str) -> str:
     except ValueError as e:
         return json.dumps({"error": str(e)})
     return json.dumps({"client_id": client_id, "api_key": created.api_key})
+
+
+@_handler(
+    "delete_client",
+    "Permanently delete an API key client. This cannot be undone.",
+    {
+        "type": "object",
+        "properties": {
+            "client_id": {"type": "string", "description": "The client ID to delete"},
+        },
+        "required": ["client_id"],
+    },
+)
+def handle_delete_client(client_id: str) -> str:
+    config = get_config()
+    try:
+        store_delete_client_record(client_id, config.clients.path)
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+    return json.dumps({"deleted": client_id})
 
 
 # --- Policy Assignment ---

@@ -133,6 +133,15 @@ def update_client(client: ClientRecord, path: Optional[str] = None) -> None:
     save_client_store(store, path)
 
 
+def delete_client(client_id: str, path: Optional[str] = None) -> None:
+    store = load_client_store(path)
+    original_count = len(store.clients)
+    store.clients = [c for c in store.clients if c.id != client_id]
+    if len(store.clients) == original_count:
+        raise ValueError(f"Client '{client_id}' was not found.")
+    save_client_store(store, path)
+
+
 def set_client_enabled(client_id: str, enabled: bool, path: Optional[str] = None) -> None:
     client = get_client(client_id, path)
     if not client:
