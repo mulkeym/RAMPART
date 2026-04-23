@@ -185,6 +185,8 @@ def _apply_local_settings(config: AppConfig) -> None:
         config.upstream.timeout_seconds = settings.upstream_timeout_seconds
     if settings.vision_evaluator_enabled is not None:
         config.vision_evaluator.enabled = settings.vision_evaluator_enabled
+    if settings.mcp_admin_key:
+        config.auth.mcp_admin_key = settings.mcp_admin_key
     if settings.vision_evaluator_base_url:
         config.vision_evaluator.base_url = settings.vision_evaluator_base_url
     if settings.vision_evaluator_model:
