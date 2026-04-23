@@ -124,7 +124,7 @@ async def mcp_endpoint(request: Request) -> JSONResponse:
 
 # --- OpenAI-Compatible Tool API ---
 
-@router.post("/v1/tools/call")
+@router.post("/v1/tools/call", include_in_schema=False)
 async def call_tool_rest(request: Request) -> JSONResponse:
     ok, message = _check_admin_key(request)
     if not ok:
@@ -147,6 +147,44 @@ async def call_tool_rest(request: Request) -> JSONResponse:
         return JSONResponse({"result": json.loads(result) if isinstance(result, str) else result})
     except Exception as e:
         return JSONResponse({"error": {"message": str(e)}}, status_code=500)
+
+
+def _register_rest_endpoints():
+    """Generate individual REST endpoints for each tool so they appear in OpenAPI spec."""
+    import asyncio as _asyncio
+
+    for tool in TOOLS:
+        name = tool["name"]
+        desc = tool["description"]
+        schema = tool["inputSchema"]
+        handler = TOOL_HANDLERS[name]
+
+        def _make_endpoint(_name, _handler):
+            async def endpoint(request: Request) -> JSONResponse:
+                ok, message = _check_admin_key(request)
+                if not ok:
+                    return JSONResponse({"error": {"message": message}}, status_code=403 if "disabled" in message else 401)
+                try:
+                    body = await request.json()
+                except Exception:
+                    body = {}
+                try:
+                    if _asyncio.iscoroutinefunction(_handler):
+                        result = await _handler(**body)
+                    else:
+                        result = _handler(**body)
+                    return JSONResponse({"result": json.loads(result) if isinstance(result, str) else result})
+                except Exception as e:
+                    return JSONResponse({"error": {"message": str(e)}}, status_code=500)
+            endpoint.__name__ = _name
+            endpoint.__doc__ = desc
+            return endpoint
+
+        router.post(
+            f"/v1/tools/{name}",
+            summary=desc,
+            name=name,
+        )(_make_endpoint(name, handler))
 
 
 # --- Policy Management Tools ---
@@ -637,3 +675,7 @@ def handle_get_violations(
         ],
     }
     return json.dumps(result, indent=2)
+
+
+# --- Register individual REST endpoints for each tool (must be after all @_handler definitions) ---
+_register_rest_endpoints()
