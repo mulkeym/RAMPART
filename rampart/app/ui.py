@@ -591,6 +591,8 @@ def _policy_row(policy: PolicyConfig) -> str:
 
 def _client_row(client: ClientRecord) -> str:
     status = "enabled" if client.enabled else "disabled"
+    toggle_label = "Disable" if client.enabled else "Enable"
+    toggle_class = "button small danger" if client.enabled else "button small success"
     owner = client.owner_email or client.owner_name
     return f"""
       <tr>
@@ -602,10 +604,10 @@ def _client_row(client: ClientRecord) -> str:
         <td><code>{escape(client.last_used_at or "")}</code></td>
         <td class="row-actions">
           <a class="button small" href="/ui/clients/{escape(client.id)}">Edit</a>
-          <form method="post" action="/ui/clients/{escape(client.id)}/toggle">
-            <button class="button small" type="submit">{"Disable" if client.enabled else "Enable"}</button>
+          <form class="confirm-action" method="post" action="/ui/clients/{escape(client.id)}/toggle" data-confirm-title="{toggle_label} Client?" data-confirm-message="Are you sure you want to {toggle_label.lower()} client {escape(client.id)}?">
+            <button class="{toggle_class}" type="submit">{toggle_label}</button>
           </form>
-          <form method="post" action="/ui/clients/{escape(client.id)}/rotate">
+          <form class="confirm-action" method="post" action="/ui/clients/{escape(client.id)}/rotate" data-confirm-title="Rotate API Key?" data-confirm-message="This will invalidate the current API key for {escape(client.id)}. The new key will be shown only once.">
             <button class="button small danger" type="submit">Rotate</button>
           </form>
         </td>
