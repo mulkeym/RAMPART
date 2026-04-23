@@ -1137,9 +1137,9 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
     .login {{ max-width: 420px; margin: 48px auto; }}
     .login h1 {{ color: var(--primary); }}
     .pg-layout {{ display: flex; flex-direction: column; gap: 18px; }}
-    .pg-input {{ display: flex; flex-direction: column; gap: 16px; }}
-    .pg-messages {{ flex: 3; display: flex; flex-direction: column; gap: 10px; }}
-    .pg-policies {{ flex: 2; }}
+    .pg-input {{ display: flex; gap: 16px; }}
+    .pg-messages {{ flex: 3; display: flex; flex-direction: column; gap: 10px; min-width: 0; }}
+    .pg-policies {{ flex: 2; display: flex; flex-direction: column; align-items: stretch; min-width: 0; }}
     .pg-msg-row {{ display: flex; gap: 8px; align-items: flex-start; }}
     .pg-msg-role {{ width: 100px; flex-shrink: 0; }}
     .pg-msg-text {{ flex: 1; min-height: 60px; }}

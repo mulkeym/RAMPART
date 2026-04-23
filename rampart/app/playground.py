@@ -76,7 +76,7 @@ def _playground_page(config, actor: Optional[str], results_html: str = "") -> st
             </div>
             <input type="hidden" name="msg_count" id="pg-msg-count" value="2">
           </div>
-          <div class="pg-policies panel" style="padding:16px">
+          <div class="pg-policies panel" style="padding:16px;text-align:left">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
               <label style="font-size:14px;font-weight:700;color:var(--text)">Policies</label>
               <a href="#" onclick="pgToggleAll(this);return false" style="font-size:12px;color:var(--primary)">Select All</a>
@@ -120,10 +120,10 @@ def _policy_checkboxes(policies: list[PolicyConfig]) -> str:
     for policy in policies:
         checked = "checked" if policy.enabled else ""
         items.append(
-            f'<label class="checkbox" style="margin-bottom:6px">'
-            f'<input type="checkbox" name="policy_{escape(policy.id)}" {checked}>'
-            f'<span><code>{escape(policy.id)}</code> {_severity_pill(policy.severity)}'
-            f'<span class="muted" style="display:block;font-size:11px">{escape(policy.description)}</span></span>'
+            f'<label style="display:flex;align-items:flex-start;gap:8px;font-weight:400;margin-bottom:6px;cursor:pointer">'
+            f'<input type="checkbox" name="policy_{escape(policy.id)}" {checked} style="width:auto;margin-top:3px;flex-shrink:0">'
+            f'<span style="text-align:left"><code>{escape(policy.id)}</code> {_severity_pill(policy.severity)}'
+            f'<span class="muted" style="display:block;font-size:11px;text-align:left">{escape(policy.description)}</span></span>'
             f'</label>'
         )
     return "\n".join(items)
