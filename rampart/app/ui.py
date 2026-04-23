@@ -830,9 +830,31 @@ def _password_change_pending(username: str) -> bool:
     return password_change_required(username, get_config().auth)
 
 
+def _page_script() -> str:
+    return ""
+
+
 def _page(title: str, body: str, actor: Optional[str] = None) -> str:
+    def _nav_class(label: str) -> str:
+        t = title.lower()
+        if label == "Policies" and "polic" in t:
+            return "active"
+        if label == "API Keys" and ("api key" in t or "client" in t):
+            return "active"
+        if label == "Violations" and "violation" in t:
+            return "active"
+        if label == "Settings" and "setting" in t:
+            return "active"
+        return ""
+
     auth_nav = (
-        f'<div class="nav-links"><a href="/ui/policies">Policies</a><a href="/ui/clients">API Keys</a><a href="/ui/violations">Violations</a><a href="/ui/settings">Settings</a></div><form method="post" action="/logout"><span>{escape(actor)}</span><button type="submit">Log Out</button></form>'
+        f'<div class="nav-links">'
+        f'<a class="{_nav_class("Policies")}" href="/ui/policies">Policies</a>'
+        f'<a class="{_nav_class("API Keys")}" href="/ui/clients">API Keys</a>'
+        f'<a class="{_nav_class("Violations")}" href="/ui/violations">Violations</a>'
+        f'<a class="{_nav_class("Settings")}" href="/ui/settings">Settings</a>'
+        f'</div>'
+        f'<form method="post" action="/logout"><span style="color:var(--muted);font-size:13px">{escape(actor)}</span><button type="submit">Log Out</button></form>'
         if actor
         else '<a href="/login">Log In</a>'
     )
@@ -844,17 +866,28 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
   <title>{escape(title)} - RAMPART</title>
   <style>
     :root {{
-      color-scheme: light;
-      --bg: #f6f7f9;
-      --panel: #ffffff;
-      --text: #1f2933;
-      --muted: #697586;
-      --border: #d9e1ea;
-      --primary: #0f766e;
-      --primary-text: #ffffff;
-      --danger: #b42318;
-      --success-bg: #e6f4ea;
-      --error-bg: #fdecec;
+      color-scheme: dark;
+      --bg: #0b0f14;
+      --bg-header: #111820;
+      --panel: #151d27;
+      --panel-hover: #1c2737;
+      --text: #e2e8f0;
+      --text-secondary: #94a3b8;
+      --muted: #64748b;
+      --border: rgba(255,255,255,0.08);
+      --border-strong: rgba(255,255,255,0.12);
+      --primary: #38bdf8;
+      --primary-hover: #22d3ee;
+      --primary-text: #0b0f14;
+      --success: #4ade80;
+      --success-bg: rgba(74,222,128,0.08);
+      --success-border: rgba(74,222,128,0.2);
+      --danger: #f87171;
+      --danger-bg: rgba(248,113,113,0.08);
+      --danger-border: rgba(248,113,113,0.2);
+      --warning: #fbbf24;
+      --warning-bg: rgba(251,191,36,0.08);
+      --warning-border: rgba(251,191,36,0.2);
     }}
     * {{ box-sizing: border-box; }}
     body {{
@@ -862,93 +895,127 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
       background: var(--bg);
       color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: 15px;
-      line-height: 1.45;
+      font-size: 14px;
+      line-height: 1.5;
     }}
     header {{
-      background: #172026;
+      background: var(--bg-header);
       color: #ffffff;
       padding: 14px 28px;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      border-bottom: 1px solid rgba(56,189,248,0.15);
     }}
-    header a {{ color: #ffffff; text-decoration: none; font-weight: 600; }}
+    header a {{ color: rgba(255,255,255,0.55); text-decoration: none; font-weight: 600; font-size: 13px; transition: color 0.15s; }}
+    header a:hover {{ color: var(--primary); }}
+    header a.active {{ color: var(--primary); font-weight: 600; border-bottom: 2px solid var(--primary); padding-bottom: 2px; }}
     .brand {{ display: flex; gap: 10px; align-items: baseline; }}
-    .brand-name {{ font-weight: 700; }}
-    .brand-full {{ color: rgba(255,255,255,.72); font-size: 13px; font-weight: 400; }}
+    .brand-name {{ font-weight: 700; color: var(--primary); letter-spacing: 1.5px; font-size: 15px; }}
+    .brand-full {{ color: rgba(255,255,255,0.4); font-size: 13px; font-weight: 400; }}
     header nav {{ display: flex; gap: 18px; align-items: center; }}
     header form {{ margin: 0; display: flex; gap: 12px; align-items: center; }}
-    header button {{ background: transparent; color: #ffffff; border: 1px solid rgba(255,255,255,.35); border-radius: 6px; padding: 6px 10px; cursor: pointer; }}
+    header button {{ background: transparent; color: #ffffff; border: 1px solid rgba(255,255,255,.35); border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 12px; transition: filter 0.15s; }}
+    header button:hover {{ filter: brightness(1.3); }}
     .nav-links {{ display: flex; gap: 12px; align-items: center; }}
     main {{ max-width: 1180px; margin: 0 auto; padding: 28px; }}
-    h1 {{ margin: 0; font-size: 28px; letter-spacing: 0; }}
+    h1 {{ margin: 0; font-size: 26px; font-weight: 700; letter-spacing: 0; color: var(--text); }}
     p {{ margin: 6px 0 0; color: var(--muted); }}
     .toolbar {{ display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 18px; }}
     .toolbar.secondary {{ margin-top: 28px; }}
     .panel {{ background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }}
     table {{ width: 100%; border-collapse: collapse; }}
-    th, td {{ padding: 13px 14px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }}
-    th {{ font-size: 12px; text-transform: uppercase; color: var(--muted); background: #fbfcfd; }}
+    th, td {{ padding: 12px 14px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: top; }}
+    th {{ font-size: 11px; text-transform: uppercase; color: var(--muted); background: var(--panel-hover); letter-spacing: 0.5px; }}
     tr:last-child td {{ border-bottom: 0; }}
-    code {{ font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px; }}
+    tbody tr {{ transition: background 0.15s; }}
+    tbody tr:nth-child(even) {{ background: rgba(255,255,255,0.02); }}
+    tbody tr:hover {{ background: rgba(255,255,255,0.04); }}
+    code {{ font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px; color: var(--primary); }}
     .muted {{ color: var(--muted); margin-top: 4px; max-width: 520px; }}
     .button {{
       display: inline-flex;
       align-items: center;
       justify-content: center;
       min-height: 36px;
-      padding: 7px 12px;
-      border: 1px solid var(--border);
+      padding: 7px 14px;
+      border: 1px solid rgba(255,255,255,0.1);
       border-radius: 6px;
-      background: #ffffff;
-      color: var(--text);
+      background: rgba(255,255,255,0.06);
+      color: var(--text-secondary);
       text-decoration: none;
       font: inherit;
       cursor: pointer;
       white-space: nowrap;
+      transition: filter 0.15s;
     }}
-    .button.primary {{ background: var(--primary); border-color: var(--primary); color: var(--primary-text); }}
+    .button:hover {{ filter: brightness(1.15); }}
+    .button.primary {{ background: var(--primary); border-color: var(--primary); color: var(--primary-text); font-weight: 600; }}
     .button.small {{ min-height: 30px; padding: 5px 9px; font-size: 13px; }}
-    .button.danger {{ color: var(--danger); }}
-    .row-actions {{ display: flex; gap: 8px; align-items: center; justify-content: flex-end; }}
+    .button.danger {{ background: var(--danger-bg); color: var(--danger); border-color: var(--danger-border); }}
+    .button.success {{ background: var(--success-bg); color: var(--success); border-color: var(--success-border); }}
+    .row-actions {{ display: flex; gap: 6px; align-items: center; justify-content: flex-end; }}
     .row-actions form {{ margin: 0; }}
-    .pill {{ display: inline-flex; padding: 3px 8px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); }}
-    .pill.enabled {{ color: #0f766e; background: #e6f4ea; }}
-    .pill.disabled {{ color: #697586; background: #f1f3f5; }}
+    .pill {{ display: inline-flex; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid var(--border); }}
+    .pill.enabled {{ color: var(--success); background: rgba(74,222,128,0.12); }}
+    .pill.disabled {{ color: var(--muted); background: rgba(100,116,139,0.15); }}
+    .pill.severity-critical {{ color: var(--danger); background: var(--danger-bg); border-color: var(--danger-border); }}
+    .pill.severity-high {{ color: #fb923c; background: rgba(251,146,60,0.08); border-color: rgba(251,146,60,0.2); }}
+    .pill.severity-medium {{ color: var(--warning); background: var(--warning-bg); border-color: var(--warning-border); }}
+    .pill.severity-low {{ color: var(--text-secondary); background: rgba(148,163,184,0.08); border-color: rgba(148,163,184,0.2); }}
+    .stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }}
+    .stat-card {{ background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }}
+    .stat-label {{ font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 8px; }}
+    .stat-value {{ font-size: 28px; font-weight: 700; color: var(--text); }}
+    .stat-sub {{ font-size: 13px; margin-top: 4px; }}
+    .stat-sub.success {{ color: var(--success); }}
+    .stat-sub.danger {{ color: var(--danger); }}
+    .stat-sub.warning {{ color: var(--warning); }}
+    .stat-sub.muted {{ color: var(--muted); }}
     .form {{ padding: 20px; display: grid; gap: 16px; }}
-    label {{ display: grid; gap: 6px; font-weight: 600; }}
+    label {{ display: grid; gap: 5px; font-weight: 600; font-size: 13px; color: var(--text-secondary); }}
     .checkbox {{ display: flex; align-items: center; gap: 8px; }}
     .policy-option {{ align-items: flex-start; font-weight: 400; }}
     .policy-option input {{ width: auto; margin-top: 3px; }}
     .fieldset {{ border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: grid; gap: 10px; }}
-    .fieldset legend {{ font-weight: 600; padding: 0 6px; }}
+    .fieldset legend {{ font-weight: 600; padding: 0 6px; color: var(--text-secondary); }}
     input, select, textarea {{
       width: 100%;
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 9px 10px;
       font: inherit;
-      background: #ffffff;
+      background: var(--bg);
       color: var(--text);
+      transition: border-color 0.15s, box-shadow 0.15s;
     }}
+    input:focus, select:focus, textarea:focus {{ outline: none; border-color: rgba(56,189,248,0.5); box-shadow: 0 0 0 3px rgba(56,189,248,0.08); }}
+    input.invalid, textarea.invalid {{ border-color: rgba(248,113,113,0.5); box-shadow: 0 0 0 3px rgba(248,113,113,0.08); }}
+    .field-error {{ color: var(--danger); font-size: 12px; font-weight: 400; }}
     textarea {{ resize: vertical; font-family: "SFMono-Regular", Consolas, monospace; font-size: 13px; }}
     .actions {{ display: flex; justify-content: flex-end; }}
     .hint {{ color: var(--muted); font-size: 13px; margin-top: -8px; }}
-    .notice {{ padding: 11px 13px; border-radius: 6px; margin-bottom: 16px; border: 1px solid var(--border); }}
-    .notice.success {{ background: var(--success-bg); }}
-    .notice.error {{ background: var(--error-bg); color: var(--danger); white-space: pre-wrap; }}
+    .notice {{ padding: 11px 13px; border-radius: 6px; margin-bottom: 16px; animation: fadeIn 0.2s ease-out; }}
+    .notice.success {{ background: var(--success-bg); border: 1px solid var(--success-border); color: var(--success); }}
+    .notice.error {{ background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger); white-space: pre-wrap; }}
     .login {{ max-width: 420px; margin: 48px auto; }}
+    .login h1 {{ color: var(--primary); }}
+    .modal-overlay {{ display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; }}
+    .modal-overlay.open {{ display: flex; }}
+    .modal {{ background: var(--panel); border: 1px solid var(--border-strong); border-radius: 10px; padding: 28px; max-width: 480px; width: 90%; animation: fadeIn 0.2s ease-out; }}
+    @keyframes fadeIn {{ from {{ opacity: 0; }} to {{ opacity: 1; }} }}
     @media (max-width: 760px) {{
       main {{ padding: 18px; }}
       .toolbar {{ align-items: stretch; flex-direction: column; }}
       table {{ display: block; overflow-x: auto; }}
       .row-actions {{ justify-content: flex-start; }}
+      .stats-grid {{ grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }}
     }}
   </style>
 </head>
 <body>
   <header><a class="brand" href="/ui/policies"><span class="brand-name">RAMPART</span><span class="brand-full">Request And Model Prompt Analysis &amp; Routing Tool</span></a><nav>{auth_nav}</nav></header>
   <main>{body}</main>
+  {_page_script()}
 </body>
 </html>"""
