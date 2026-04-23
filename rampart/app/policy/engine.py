@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from typing import Any, Optional
 
 from rampart.app.config import AppConfig, PolicyConfig
 from rampart.app.llm.evaluator import LlmEvaluator
+from rampart.app.llm.vision_evaluator import VisionEvaluator
 from rampart.app.models import EvaluationResponse, Violation
 from rampart.app.openai.compat import extract_model, extract_tool_names, iter_message_text
 from rampart.app.policy.sanitizer import sanitize_request
@@ -15,11 +17,15 @@ class PolicyEngine:
         self.config = config
         self.policies = policies if policies is not None else config.policies
         self.llm_evaluator = LlmEvaluator(config, self.policies)
+        self.vision_evaluator = VisionEvaluator(config, self.policies)
 
     async def evaluate(self, request: dict[str, Any]) -> EvaluationResponse:
         deterministic_violations, denied_tools = self._evaluate_deterministic(request)
-        llm_violations = await self.llm_evaluator.evaluate(request)
-        violations = _dedupe_violations(deterministic_violations + llm_violations)
+        llm_violations, (vision_violations, vision_warnings) = await asyncio.gather(
+            self.llm_evaluator.evaluate(request),
+            self.vision_evaluator.evaluate(request),
+        )
+        violations = _dedupe_violations(deterministic_violations + llm_violations + vision_violations)
         decision = "fail" if any(_is_blocking(v, self.policies) for v in violations) else "accept"
         sanitized = None
         if violations and self.config.failure_response.include_sanitized_request:
@@ -28,6 +34,7 @@ class PolicyEngine:
             decision=decision,
             violations=violations,
             sanitized_request=sanitized,
+            warnings=vision_warnings,
         )
 
     def _evaluate_deterministic(self, request: dict[str, Any]) -> tuple[list[Violation], set[str]]:
