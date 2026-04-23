@@ -152,6 +152,7 @@ async def call_tool_rest(request: Request) -> JSONResponse:
 def _register_rest_endpoints():
     """Generate individual REST endpoints for each tool so they appear in OpenAPI spec."""
     import asyncio as _asyncio
+    from fastapi import Body
 
     for tool in TOOLS:
         name = tool["name"]
@@ -159,17 +160,26 @@ def _register_rest_endpoints():
         schema = tool["inputSchema"]
         handler = TOOL_HANDLERS[name]
 
-        def _make_endpoint(_name, _handler):
+        def _make_endpoint(_name, _handler, _schema):
             async def endpoint(request: Request) -> JSONResponse:
                 ok, message = _check_admin_key(request)
                 if not ok:
                     return JSONResponse({"error": {"message": message}}, status_code=403 if "disabled" in message else 401)
+                raw_body = (await request.body()).decode("utf-8", errors="replace")
                 try:
-                    body = await request.json()
+                    body = json.loads(raw_body) if raw_body.strip() else {}
                 except Exception:
                     body = {}
-                # Handle OpenAI function-call wrappers: {"arguments": {...}} or {"arguments": "..."}
-                if "arguments" in body and len(body) <= 2:
+                # Handle OpenAI function-call wrappers
+                if isinstance(body, dict) and "arguments" in body:
+                    args = body["arguments"]
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except (json.JSONDecodeError, TypeError):
+                            args = {}
+                    body = args if isinstance(args, dict) else {}
+                if isinstance(body, dict) and "name" in body and "arguments" in body:
                     args = body["arguments"]
                     if isinstance(args, str):
                         try:
@@ -189,11 +199,25 @@ def _register_rest_endpoints():
             endpoint.__doc__ = desc
             return endpoint
 
-        router.post(
+        # Build OpenAPI request body schema from the tool's input schema
+        openapi_schema = None
+        if schema.get("properties"):
+            openapi_schema = {
+                "content": {
+                    "application/json": {
+                        "schema": schema,
+                    }
+                },
+            }
+
+        router.add_api_route(
             f"/v1/tools/{name}",
+            _make_endpoint(name, handler, schema),
+            methods=["POST"],
             summary=desc,
             name=name,
-        )(_make_endpoint(name, handler))
+            openapi_extra={"requestBody": openapi_schema} if openapi_schema else None,
+        )
 
 
 # --- Policy Management Tools ---
