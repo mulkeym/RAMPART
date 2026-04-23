@@ -978,6 +978,8 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
             return "active"
         if label == "Settings" and "setting" in t:
             return "active"
+        if label == "Playground" and "playground" in t:
+            return "active"
         return ""
 
     auth_nav = (
@@ -985,6 +987,7 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
         f'<a class="{_nav_class("Policies")}" href="/ui/policies">Policies</a>'
         f'<a class="{_nav_class("API Keys")}" href="/ui/clients">API Keys</a>'
         f'<a class="{_nav_class("Violations")}" href="/ui/violations">Violations</a>'
+        f'<a class="{_nav_class("Playground")}" href="/ui/playground">Playground</a>'
         f'<a class="{_nav_class("Settings")}" href="/ui/settings">Settings</a>'
         f'</div>'
         f'<form method="post" action="/logout"><span style="color:var(--muted);font-size:13px">{escape(actor)}</span><button type="submit">Log Out</button></form>'
@@ -1133,6 +1136,30 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
     .notice.error {{ background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger); white-space: pre-wrap; }}
     .login {{ max-width: 420px; margin: 48px auto; }}
     .login h1 {{ color: var(--primary); }}
+    .pg-layout {{ display: flex; flex-direction: column; gap: 18px; }}
+    .pg-input {{ display: flex; gap: 16px; }}
+    .pg-messages {{ flex: 3; display: flex; flex-direction: column; gap: 10px; }}
+    .pg-policies {{ flex: 2; }}
+    .pg-msg-row {{ display: flex; gap: 8px; align-items: flex-start; }}
+    .pg-msg-role {{ width: 100px; flex-shrink: 0; }}
+    .pg-msg-text {{ flex: 1; min-height: 60px; }}
+    .pg-msg-images {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }}
+    .pg-msg-images img {{ max-height: 80px; border-radius: 4px; border: 1px solid var(--border); object-fit: contain; }}
+    .pg-controls {{ display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }}
+    .pg-results {{ display: flex; gap: 12px; min-height: 300px; }}
+    .pg-results > div {{ flex: 1; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; overflow-y: auto; max-height: 500px; }}
+    .pg-decision {{ padding: 8px 12px; border-radius: 6px; font-weight: 700; font-size: 13px; text-align: center; margin-bottom: 12px; animation: fadeIn 0.2s ease-out; }}
+    .pg-decision.accepted {{ background: var(--success-bg); border: 1px solid var(--success-border); color: var(--success); }}
+    .pg-decision.blocked {{ background: var(--danger-bg); border: 1px solid var(--danger-border); color: var(--danger); }}
+    .pg-policy-item {{ padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }}
+    .pg-policy-header {{ display: flex; justify-content: space-between; align-items: center; cursor: pointer; }}
+    .pg-policy-detail {{ display: none; padding: 8px 0 0 12px; color: var(--text-secondary); font-size: 12px; }}
+    .pg-policy-detail.open {{ display: block; }}
+    .pg-json {{ background: var(--bg); border-radius: 6px; padding: 12px; font-family: "SFMono-Regular", Consolas, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; overflow-x: auto; }}
+    .pg-json .key {{ color: var(--primary); }}
+    .pg-json .redacted {{ color: var(--warning); font-weight: 600; }}
+    .pg-adhoc {{ border: 1px dashed var(--border); border-radius: 6px; padding: 10px; margin-top: 8px; }}
+    .pg-loading {{ display: flex; align-items: center; justify-content: center; min-height: 200px; color: var(--muted); }}
     .modal-overlay {{ display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; }}
     .modal-overlay.active {{ display: flex; }}
     .modal {{ background: var(--panel); border: 1px solid var(--border-strong); border-radius: 10px; padding: 28px; max-width: 480px; width: 90%; animation: fadeIn 0.2s ease-out; }}
@@ -1143,6 +1170,9 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
       table {{ display: block; overflow-x: auto; }}
       .row-actions {{ justify-content: flex-start; }}
       .stats-grid {{ grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); }}
+      .pg-input {{ flex-direction: column; }}
+      .pg-results {{ flex-direction: column; }}
+      .pg-results > div {{ max-height: none; }}
     }}
   </style>
 </head>
