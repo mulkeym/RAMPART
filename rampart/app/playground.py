@@ -210,3 +210,265 @@ function pgToggleDetail(el){
   if(detail)detail.classList.toggle('open');
 }
 </script>"""
+
+
+@router.post("/ui/playground", response_class=HTMLResponse)
+async def playground_evaluate(request: Request) -> HTMLResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        audit_event(request, "ui.unauthorized", result="failure", target="/ui/playground")
+        return redirect
+    actor = read_session_user(request)
+    config = get_config()
+    form = await _parse_form(request)
+    action = form.get("action", "evaluate")
+
+    messages = _build_messages(form)
+    openai_request: dict[str, Any] = {"messages": messages}
+    model_override = form.get("model_override", "").strip()
+    if model_override:
+        openai_request["model"] = model_override
+
+    selected_policies = _resolve_selected_policies(config, form)
+
+    from rampart.app.policy.engine import PolicyEngine
+    engine = PolicyEngine(config, selected_policies)
+    start_time = time.time()
+    response = await engine.evaluate(openai_request)
+    eval_ms = int((time.time() - start_time) * 1000)
+
+    policy_results = _build_policy_results(selected_policies, response)
+
+    llm_response_html = ""
+    if action in ("send", "force_send"):
+        has_blocking = any(
+            r["status"] == "match" and _policy_action(r["policy_id"], selected_policies) == "block"
+            for r in policy_results
+        )
+        if not has_blocking or action == "force_send":
+            llm_response_html = await _send_upstream(config, form, openai_request, response)
+        else:
+            llm_response_html = _blocked_response_html()
+    else:
+        llm_response_html = '<div class="muted">Not sent to upstream &mdash; use "Evaluate &amp; Send" to see LLM response.</div>'
+
+    results_html = _render_results(response, policy_results, eval_ms, llm_response_html)
+    return HTMLResponse(results_html)
+
+
+async def _parse_form(request: Request) -> dict[str, str]:
+    body = (await request.body()).decode("utf-8")
+    parsed = parse_qs(body, keep_blank_values=True)
+    return {key: values[-1] for key, values in parsed.items()}
+
+
+def _build_messages(form: dict[str, str]) -> list[dict[str, Any]]:
+    msg_count = int(form.get("msg_count", "0"))
+    messages: list[dict[str, Any]] = []
+    for i in range(msg_count):
+        role = form.get(f"msg_role_{i}", "user")
+        text = form.get(f"msg_text_{i}", "")
+        if not role:
+            continue
+        image_urls = []
+        for j in range(20):
+            img_url = form.get(f"msg_img_{i}_{j}", "").strip()
+            if img_url:
+                image_urls.append(img_url)
+            elif j > 0 and f"msg_img_{i}_{j}" not in form:
+                break
+        if image_urls:
+            content: list[dict[str, Any]] = [{"type": "text", "text": text}]
+            for url in image_urls:
+                content.append({"type": "image_url", "image_url": {"url": url}})
+            messages.append({"role": role, "content": content})
+        else:
+            messages.append({"role": role, "content": text})
+    return messages
+
+
+def _resolve_selected_policies(config, form: dict[str, str]) -> list[PolicyConfig]:
+    selected: list[PolicyConfig] = []
+    for policy in config.policies:
+        if form.get(f"policy_{policy.id}") == "on":
+            p = policy.model_copy()
+            p.enabled = True
+            selected.append(p)
+    adhoc_count = int(form.get("adhoc_count", "0"))
+    for i in range(adhoc_count):
+        adhoc_type = form.get(f"adhoc_type_{i}", "regex")
+        severity = form.get(f"adhoc_severity_{i}", "medium")
+        action = form.get(f"adhoc_action_{i}", "block")
+        pattern = form.get(f"adhoc_pattern_{i}", "").strip()
+        instruction = form.get(f"adhoc_instruction_{i}", "").strip()
+        if adhoc_type == "regex" and pattern:
+            selected.append(PolicyConfig(
+                id=f"adhoc-{i+1}",
+                enabled=True,
+                severity=severity,
+                category="adhoc",
+                description=f"Ad-hoc regex: {pattern}",
+                action=action,
+                checks=[CheckConfig(type="regex", pattern=pattern)],
+            ))
+        elif adhoc_type == "llm" and instruction:
+            selected.append(PolicyConfig(
+                id=f"adhoc-{i+1}",
+                enabled=True,
+                severity=severity,
+                category="adhoc",
+                description="Ad-hoc LLM rule",
+                action=action,
+                checks=[CheckConfig(type="llm", instruction=instruction)],
+            ))
+    return selected
+
+
+def _build_policy_results(policies: list[PolicyConfig], response) -> list[dict[str, Any]]:
+    violation_map: dict[str, list] = {}
+    for v in response.violations:
+        violation_map.setdefault(v.policy_id, []).append(v)
+    results = []
+    for policy in policies:
+        violations = violation_map.get(policy.id, [])
+        results.append({
+            "policy_id": policy.id,
+            "severity": policy.severity,
+            "action": policy.action,
+            "description": policy.description,
+            "status": "match" if violations else "pass",
+            "violations": violations,
+        })
+    return results
+
+
+def _policy_action(policy_id: str, policies: list[PolicyConfig]) -> str:
+    for p in policies:
+        if p.id == policy_id:
+            return p.action
+    return "block"
+
+
+async def _send_upstream(config, form: dict[str, str], openai_request: dict[str, Any], response) -> str:
+    from rampart.app.openai.proxy import proxy_chat_completion
+
+    upstream = config.upstream.model_copy()
+    override_url = form.get("upstream_override_url", "").strip()
+    override_key = form.get("upstream_override_key", "").strip()
+    override_timeout = form.get("upstream_override_timeout", "").strip()
+    if override_url:
+        upstream.base_url = override_url
+    if override_key:
+        upstream.api_key = override_key
+    if override_timeout:
+        try:
+            upstream.timeout_seconds = float(override_timeout)
+        except ValueError:
+            pass
+
+    payload = response.sanitized_request if response.violations and response.sanitized_request else openai_request
+    payload = deepcopy(payload)
+    model_override = form.get("model_override", "").strip()
+    if model_override:
+        payload["model"] = model_override
+    elif upstream.model:
+        payload["model"] = upstream.model
+
+    start_time = time.time()
+    try:
+        body, status = await proxy_chat_completion(upstream, payload)
+        elapsed_ms = int((time.time() - start_time) * 1000)
+    except Exception as e:
+        return f'<div class="notice error">Upstream error: {escape(str(e))}</div>'
+
+    if status >= 400:
+        error_msg = body.get("error", {}).get("message", json.dumps(body)) if isinstance(body, dict) else str(body)
+        return f'<div class="notice error">Upstream returned {status}: {escape(str(error_msg))}</div>'
+
+    content = ""
+    model_name = ""
+    usage_html = ""
+    if isinstance(body, dict):
+        model_name = body.get("model", "")
+        choices = body.get("choices", [])
+        if choices and isinstance(choices[0], dict):
+            msg = choices[0].get("message", {})
+            content = msg.get("content", "") if isinstance(msg, dict) else ""
+        usage = body.get("usage")
+        if isinstance(usage, dict):
+            prompt_tokens = usage.get("prompt_tokens", "?")
+            completion_tokens = usage.get("completion_tokens", "?")
+            total_tokens = usage.get("total_tokens", "?")
+            usage_html = f'<div class="muted" style="font-size:11px;margin-top:8px">Tokens: {prompt_tokens} prompt + {completion_tokens} completion = {total_tokens} total</div>'
+
+    return f"""
+      <div style="white-space:pre-wrap;font-size:13px;line-height:1.6">{escape(content)}</div>
+      <div class="muted" style="font-size:11px;margin-top:8px">Model: {escape(model_name)} | {elapsed_ms}ms</div>
+      {usage_html}
+    """
+
+
+def _blocked_response_html() -> str:
+    return """
+      <div class="muted">Blocked by policy &mdash; not sent to upstream.</div>
+      <button type="button" class="button small danger" onclick="pgForceSend()" style="margin-top:8px">Force Send Anyway</button>
+    """
+
+
+def _render_results(response, policy_results: list[dict], eval_ms: int, llm_response_html: str) -> str:
+    decision_class = "accepted" if response.decision == "accept" else "blocked"
+    decision_label = "ACCEPTED" if response.decision == "accept" else "BLOCKED"
+
+    policy_items = []
+    for pr in policy_results:
+        status_color = "var(--success)" if pr["status"] == "pass" else "var(--danger)"
+        status_label = "PASS" if pr["status"] == "pass" else "MATCH"
+        is_adhoc = pr["policy_id"].startswith("adhoc-")
+        id_suffix = " <span class='muted'>(ad-hoc)</span>" if is_adhoc else ""
+
+        detail_html = ""
+        if pr["violations"]:
+            details = []
+            for v in pr["violations"]:
+                details.append(f"<div><strong>Message:</strong> {escape(v.message)}</div>")
+                details.append(f"<div><strong>Source:</strong> {escape(v.source)}</div>")
+                if v.path:
+                    details.append(f"<div><strong>Path:</strong> <code>{escape(v.path)}</code></div>")
+            detail_html = f'<div class="pg-policy-detail">{"".join(details)}</div>'
+
+        policy_items.append(f"""
+          <div class="pg-policy-item">
+            <div class="pg-policy-header" onclick="pgToggleDetail(this)">
+              <span><code>{escape(pr["policy_id"])}</code>{id_suffix} {_severity_pill(pr["severity"])}</span>
+              <span style="color:{status_color};font-size:12px;font-weight:600">{status_label}</span>
+            </div>
+            {detail_html}
+          </div>
+        """)
+
+    sanitized_html = ""
+    if response.sanitized_request:
+        san_json = json.dumps(response.sanitized_request, indent=2, sort_keys=False, ensure_ascii=False)
+        san_json_escaped = escape(san_json).replace("[REDACTED]", '<span class="redacted">[REDACTED]</span>')
+        sanitized_html = f'<div class="pg-json">{san_json_escaped}</div>'
+    else:
+        sanitized_html = '<div class="muted">No modifications &mdash; original request passes clean.</div>'
+
+    return f"""
+      <div class="pg-results">
+        <div>
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:8px">Policy Results</div>
+          <div class="pg-decision {decision_class}">{decision_label}</div>
+          {"".join(policy_items)}
+          <div class="muted" style="font-size:11px;margin-top:12px">Evaluated in {eval_ms}ms</div>
+        </div>
+        <div>
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:8px">Sanitized Request</div>
+          {sanitized_html}
+        </div>
+        <div>
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:8px">LLM Response</div>
+          {llm_response_html}
+        </div>
+      </div>
+    """
