@@ -37,7 +37,9 @@ class AuthConfig(BaseModel):
     session_max_age_seconds: int = 28800
     secure_cookies: bool = False
     audit_log_path: str = "logs/audit.jsonl"
+    mcp_enabled: bool = False
     mcp_admin_key: str = ""
+    mcp_admin_write: bool = False
 
 
 class ClientStoreConfig(BaseModel):
@@ -185,8 +187,12 @@ def _apply_local_settings(config: AppConfig) -> None:
         config.upstream.timeout_seconds = settings.upstream_timeout_seconds
     if settings.vision_evaluator_enabled is not None:
         config.vision_evaluator.enabled = settings.vision_evaluator_enabled
+    if settings.mcp_enabled is not None:
+        config.auth.mcp_enabled = settings.mcp_enabled
     if settings.mcp_admin_key:
         config.auth.mcp_admin_key = settings.mcp_admin_key
+    if settings.mcp_admin_write is not None:
+        config.auth.mcp_admin_write = settings.mcp_admin_write
     if settings.vision_evaluator_base_url:
         config.vision_evaluator.base_url = settings.vision_evaluator_base_url
     if settings.vision_evaluator_model:

@@ -15,7 +15,9 @@ class RuntimeSettings(BaseModel):
     vision_evaluator_base_url: str = ""
     vision_evaluator_model: str = ""
     vision_evaluator_timeout_seconds: Optional[float] = None
+    mcp_enabled: Optional[bool] = None
     mcp_admin_key: str = ""
+    mcp_admin_write: Optional[bool] = None
     upstream_enabled: Optional[bool] = None
     upstream_base_url: str = ""
     upstream_model: str = ""

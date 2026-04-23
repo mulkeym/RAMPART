@@ -47,12 +47,21 @@ def _jsonrpc_error(id: Any, code: int, message: str) -> dict:
     return {"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}}
 
 
+WRITE_TOOLS = {
+    "create_policy", "update_policy", "delete_policy",
+    "create_client", "update_client", "delete_client",
+    "toggle_client", "rotate_client_key", "assign_policies",
+}
+
+
 def _check_admin_key(request: Request) -> tuple[bool, str]:
     """Returns (ok, error_message). Shared by MCP and REST endpoints."""
     config = get_config()
+    if not config.auth.mcp_enabled:
+        return False, "MCP is disabled — enable it in Settings"
     admin_key = config.auth.mcp_admin_key
     if not admin_key:
-        return False, "MCP is disabled — set RAMPART_MCP_ADMIN_KEY to enable"
+        return False, "MCP admin key not set — configure it in Settings"
     provided = request.headers.get("authorization", "")
     if provided.lower().startswith("bearer "):
         provided = provided[7:].strip()
@@ -61,6 +70,16 @@ def _check_admin_key(request: Request) -> tuple[bool, str]:
     if provided != admin_key:
         return False, "Invalid admin key"
     return True, ""
+
+
+def _check_write_access(tool_name: str) -> Optional[str]:
+    """Returns error message if tool requires write access and it's disabled."""
+    if tool_name not in WRITE_TOOLS:
+        return None
+    config = get_config()
+    if not config.auth.mcp_admin_write:
+        return f"Write access disabled — tool '{tool_name}' requires admin write access. Enable it in Settings."
+    return None
 
 
 def _validate_admin_key(request: Request) -> Optional[JSONResponse]:
@@ -105,6 +124,12 @@ async def mcp_endpoint(request: Request) -> JSONResponse:
         handler = TOOL_HANDLERS.get(tool_name)
         if not handler:
             return JSONResponse(_jsonrpc_error(msg_id, -32601, f"Unknown tool: {tool_name}"))
+        write_error = _check_write_access(tool_name)
+        if write_error:
+            return JSONResponse(_jsonrpc_response(msg_id, {
+                "content": [{"type": "text", "text": write_error}],
+                "isError": True,
+            }))
         try:
             import asyncio
             if asyncio.iscoroutinefunction(handler):
@@ -166,6 +191,9 @@ def _register_rest_endpoints():
                 ok, message = _check_admin_key(request)
                 if not ok:
                     return JSONResponse({"error": {"message": message}}, status_code=403 if "disabled" in message else 401)
+                write_error = _check_write_access(_name)
+                if write_error:
+                    return JSONResponse({"error": {"message": write_error}}, status_code=403)
                 raw_body = (await request.body()).decode("utf-8", errors="replace")
                 try:
                     body = json.loads(raw_body) if raw_body.strip() else {}

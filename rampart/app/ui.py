@@ -237,7 +237,9 @@ async def update_settings(request: Request) -> HTMLResponse:
             vision_evaluator_base_url=form.get("vision_evaluator_base_url", "").strip(),
             vision_evaluator_model=form.get("vision_evaluator_model", "").strip(),
             vision_evaluator_timeout_seconds=_optional_float(form.get("vision_evaluator_timeout_seconds", "")),
+            mcp_enabled=form.get("mcp_enabled") == "on",
             mcp_admin_key=form.get("mcp_admin_key", "").strip(),
+            mcp_admin_write=form.get("mcp_admin_write") == "on",
             upstream_enabled=form.get("upstream_enabled") == "on",
             upstream_base_url=form.get("upstream_base_url", "").strip(),
             upstream_model=form.get("upstream_model", "").strip(),
@@ -689,14 +691,21 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
         </fieldset>
         <fieldset class="fieldset">
           <legend>MCP Server</legend>
-          <div class="hint">Enables the /mcp endpoint for LLM-driven administration. Set an admin key to activate.</div>
+          <div class="hint">Enables the /mcp and /v1/tools endpoints for LLM-driven administration.</div>
+          <div>
+            <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;color:var(--text-secondary)">Enabled <input type="checkbox" name="mcp_enabled" {"checked" if config.auth.mcp_enabled else ""} style="width:auto"></label>
+            <div class="hint" style="margin-top:4px">When disabled, all MCP and tool API requests are rejected.</div>
+          </div>
           <label>Admin Key
             <div style="display:flex;gap:8px">
-              <input name="mcp_admin_key" value="{escape(config.auth.mcp_admin_key)}" autocomplete="off" placeholder="Not set &mdash; MCP disabled" style="flex:1">
+              <input name="mcp_admin_key" value="{escape(config.auth.mcp_admin_key)}" autocomplete="off" placeholder="Not set" style="flex:1">
               <button type="button" class="button small" onclick="document.querySelector('input[name=mcp_admin_key]').value='mcp_'+Array.from(crypto.getRandomValues(new Uint8Array(24)),function(b){{return b.toString(16).padStart(2,'0')}}).join('')">Generate</button>
             </div>
           </label>
-          <div class="hint">Click Generate to create a random key, then Save. Use this key in the Authorization header: <code>Bearer &lt;key&gt;</code></div>
+          <div>
+            <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;color:var(--text-secondary)">Admin Write Access <input type="checkbox" name="mcp_admin_write" {"checked" if config.auth.mcp_admin_write else ""} style="width:auto"></label>
+            <div class="hint" style="margin-top:4px">When off, LLMs can only read data (list, get, evaluate, violations). When on, LLMs can also create, update, and delete policies and clients.</div>
+          </div>
         </fieldset>
         <div class="actions"><button class="button primary" type="submit">Save Settings</button></div>
       </form>
