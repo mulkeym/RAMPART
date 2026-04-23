@@ -108,6 +108,7 @@ async def policies_index(request: Request, message: Optional[str] = None, error:
         audit_event(request, "ui.unauthorized", result="failure", target="/ui/policies")
         return redirect
     config = get_config()
+    events = load_evaluation_events(config.tracking.log_path)
     rows = "\n".join(_policy_row(policy) for policy in config.policies)
     body = f"""
       <section class="toolbar">
@@ -118,6 +119,7 @@ async def policies_index(request: Request, message: Optional[str] = None, error:
         <a class="button primary" href="/ui/policies/new">New Policy</a>
       </section>
       {_notice(message, error)}
+      {_policy_stats_cards(config, events)}
       <section class="panel">
         <table>
           <thead>
@@ -160,6 +162,7 @@ async def violations_index(request: Request, customer: Optional[str] = None, cli
           {selected}
         </div>
       </section>
+      {_violation_stats_cards(events)}
       <section class="panel">
         <table>
           <thead>
@@ -773,6 +776,84 @@ def _empty_row(colspan: int, message: str) -> str:
 
 def _severity_pill(severity: str) -> str:
     return f'<span class="pill severity-{escape(severity)}">{escape(severity)}</span>'
+
+
+def _policy_stats_cards(config, events: list) -> str:
+    from rampart.app.client_store import list_clients
+
+    total_policies = len(config.policies)
+    enabled_policies = sum(1 for p in config.policies if p.enabled)
+    clients = list_clients(config.clients.path)
+    total_clients = len(clients)
+    active_clients = sum(1 for c in clients if c.enabled)
+    failed_events = [e for e in events if e.get("decision") == "fail"]
+    total_violations = sum(len(e.get("violations", [])) for e in failed_events)
+    high_critical = sum(
+        1 for e in failed_events for v in (e.get("violations") or [])
+        if v.get("severity") in {"high", "critical"}
+    )
+    return f"""
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Policies</div>
+          <div class="stat-value">{total_policies}</div>
+          <div class="stat-sub success">{enabled_policies} enabled</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">API Keys</div>
+          <div class="stat-value">{total_clients}</div>
+          <div class="stat-sub success">{active_clients} active</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Violations</div>
+          <div class="stat-value" style="color:{'var(--danger)' if total_violations > 0 else 'var(--text)'}">{total_violations}</div>
+          <div class="stat-sub {'danger' if high_critical > 0 else 'muted'}">{high_critical} high/critical</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Failed Requests</div>
+          <div class="stat-value" style="color:{'var(--warning)' if len(failed_events) > 0 else 'var(--text)'}">{len(failed_events)}</div>
+          <div class="stat-sub muted">all time</div>
+        </div>
+      </div>
+    """
+
+
+def _violation_stats_cards(events: list) -> str:
+    failed_events = [e for e in events if e.get("decision") == "fail"]
+    total_violations = sum(len(e.get("violations", [])) for e in failed_events)
+    high_critical = sum(
+        1 for e in failed_events for v in (e.get("violations") or [])
+        if v.get("severity") in {"high", "critical"}
+    )
+    customers = set(e.get("customer", "default") for e in failed_events)
+    policies = set(
+        v.get("policy_id", "unknown")
+        for e in failed_events for v in (e.get("violations") or [])
+    )
+    return f"""
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Violations</div>
+          <div class="stat-value" style="color:{'var(--danger)' if total_violations > 0 else 'var(--text)'}">{total_violations}</div>
+          <div class="stat-sub muted">across all clients</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">High / Critical</div>
+          <div class="stat-value" style="color:{'var(--danger)' if high_critical > 0 else 'var(--text)'}">{high_critical}</div>
+          <div class="stat-sub {'danger' if high_critical > 0 else 'muted'}">require attention</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Customers Affected</div>
+          <div class="stat-value">{len(customers)}</div>
+          <div class="stat-sub muted">unique customers</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Policies Triggered</div>
+          <div class="stat-value">{len(policies)}</div>
+          <div class="stat-sub muted">unique policies</div>
+        </div>
+      </div>
+    """
 
 
 def _select(name: str, options: list[str], selected: str) -> str:
