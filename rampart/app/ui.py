@@ -109,7 +109,9 @@ async def policies_index(request: Request, message: Optional[str] = None, error:
         return redirect
     config = get_config()
     events = load_evaluation_events(config.tracking.log_path)
-    rows = "\n".join(_policy_row(policy) for policy in config.policies)
+    events_24h = _filter_events_24h(events)
+    hit_counts = _policy_hit_counts(events_24h)
+    rows = "\n".join(_policy_row(policy, hit_counts.get(policy.id, 0)) for policy in config.policies)
     body = f"""
       <section class="toolbar">
         <div>
@@ -119,17 +121,18 @@ async def policies_index(request: Request, message: Optional[str] = None, error:
         <a class="button primary" href="/ui/policies/new">New Policy</a>
       </section>
       {_notice(message, error)}
-      {_policy_stats_cards(config, events)}
+      {_policy_stats_cards(config, events_24h)}
       <section class="panel">
-        <table>
+        <table class="sortable" id="policy-table">
           <thead>
             <tr>
-              <th>ID</th>
-              <th>Status</th>
-              <th>Severity</th>
-              <th>Category</th>
-              <th>Action</th>
-              <th>Checks</th>
+              <th data-sort="text">ID</th>
+              <th data-sort="text">Status</th>
+              <th data-sort="text">Severity</th>
+              <th data-sort="text">Category</th>
+              <th data-sort="text">Action</th>
+              <th data-sort="num">Checks</th>
+              <th data-sort="num">Hits (24h)</th>
               <th></th>
             </tr>
           </thead>
@@ -577,8 +580,9 @@ def _policy_form(policy: PolicyConfig, title: str, action_url: str, error: Optio
     return _page(title, body, actor)
 
 
-def _policy_row(policy: PolicyConfig) -> str:
+def _policy_row(policy: PolicyConfig, hits: int = 0) -> str:
     status = "enabled" if policy.enabled else "disabled"
+    hit_color = "var(--danger)" if hits > 0 else "var(--muted)"
     return f"""
       <tr>
         <td><code>{escape(policy.id)}</code><div class="muted">{escape(policy.description)}</div></td>
@@ -587,6 +591,7 @@ def _policy_row(policy: PolicyConfig) -> str:
         <td>{escape(policy.category)}</td>
         <td>{escape(policy.action)}</td>
         <td>{len(policy.checks)}</td>
+        <td style="color:{hit_color};font-weight:600">{hits}</td>
         <td class="row-actions">
           <a class="button small" href="/ui/policies/{escape(policy.id)}">Edit</a>
           <form class="confirm-action" method="post" action="/ui/policies/{escape(policy.id)}/delete" data-confirm-title="Delete Policy?" data-confirm-message="Are you sure you want to delete {escape(policy.id)}? This cannot be undone.">
@@ -798,6 +803,23 @@ def _severity_pill(severity: str) -> str:
     return f'<span class="pill severity-{escape(severity)}">{escape(severity)}</span>'
 
 
+def _filter_events_24h(events: list) -> list:
+    from datetime import datetime, timezone, timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    return [e for e in events if (e.get("timestamp") or "") >= cutoff]
+
+
+def _policy_hit_counts(events: list) -> dict:
+    counts: dict[str, int] = {}
+    for e in events:
+        if e.get("decision") != "fail":
+            continue
+        for v in e.get("violations") or []:
+            pid = v.get("policy_id", "")
+            counts[pid] = counts.get(pid, 0) + 1
+    return counts
+
+
 def _policy_stats_cards(config, events: list) -> str:
     from rampart.app.client_store import list_clients
 
@@ -832,7 +854,7 @@ def _policy_stats_cards(config, events: list) -> str:
         <div class="stat-card">
           <div class="stat-label">Failed Requests</div>
           <div class="stat-value" style="color:{'var(--warning)' if len(failed_events) > 0 else 'var(--text)'}">{len(failed_events)}</div>
-          <div class="stat-sub muted">all time</div>
+          <div class="stat-sub muted">last 24 hours</div>
         </div>
       </div>
     """
@@ -984,6 +1006,25 @@ def _page_script() -> str:
     }
   }
 })();
+document.querySelectorAll('table.sortable thead th[data-sort]').forEach(function(th){
+  th.style.cursor='pointer';
+  th.addEventListener('click',function(){
+    var table=th.closest('table'),tbody=table.querySelector('tbody');
+    var idx=[].indexOf.call(th.parentNode.children,th);
+    var rows=[].slice.call(tbody.querySelectorAll('tr'));
+    var type=th.dataset.sort;
+    var asc=th.dataset.dir!=='asc';th.dataset.dir=asc?'asc':'desc';
+    th.parentNode.querySelectorAll('th').forEach(function(h){if(h!==th)h.dataset.dir='';});
+    rows.sort(function(a,b){
+      var av=(a.children[idx]||{}).textContent||'';
+      var bv=(b.children[idx]||{}).textContent||'';
+      if(type==='num'){av=parseFloat(av)||0;bv=parseFloat(bv)||0;}
+      else{av=av.toLowerCase();bv=bv.toLowerCase();}
+      return av<bv?(asc?-1:1):av>bv?(asc?1:-1):0;
+    });
+    rows.forEach(function(r){tbody.appendChild(r);});
+  });
+});
 </script>"""
 
 
@@ -1084,6 +1125,10 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
     table {{ width: 100%; border-collapse: collapse; }}
     th, td {{ padding: 12px 14px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: top; }}
     th {{ font-size: 11px; text-transform: uppercase; color: var(--muted); background: var(--panel-hover); letter-spacing: 0.5px; }}
+    th[data-sort] {{ cursor: pointer; user-select: none; }}
+    th[data-sort]:hover {{ color: var(--primary); }}
+    th[data-sort][data-dir="asc"]::after {{ content: " \\25B2"; font-size: 9px; }}
+    th[data-sort][data-dir="desc"]::after {{ content: " \\25BC"; font-size: 9px; }}
     tr:last-child td {{ border-bottom: 0; }}
     tbody tr {{ transition: background 0.15s; }}
     tbody tr:nth-child(even) {{ background: rgba(255,255,255,0.02); }}
