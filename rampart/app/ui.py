@@ -230,6 +230,7 @@ async def update_settings(request: Request) -> HTMLResponse:
             llm_evaluator_base_url=form.get("llm_evaluator_base_url", "").strip(),
             llm_evaluator_model=form.get("llm_evaluator_model", "").strip(),
             llm_evaluator_timeout_seconds=_optional_float(form.get("llm_evaluator_timeout_seconds", "")),
+            upstream_enabled=form.get("upstream_enabled") == "on",
             upstream_base_url=form.get("upstream_base_url", "").strip(),
             upstream_model=form.get("upstream_model", "").strip(),
             upstream_api_key=form.get("upstream_api_key", "").strip(),
@@ -639,6 +640,8 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
         <fieldset class="fieldset">
           <legend>Default Pass-Through LLM</legend>
           <div class="hint">Used by /v1/chat/completions when an API key does not override backend settings.</div>
+          <label class="checkbox"><input type="checkbox" name="upstream_enabled" {"checked" if config.upstream.enabled else ""}> Enabled</label>
+          <div class="hint">When disabled, requests are evaluated but not forwarded to any upstream LLM. Anonymous users cannot use the LLM.</div>
           <label>Base URL<input name="upstream_base_url" value="{get_value("upstream_base_url", config.upstream.base_url)}" placeholder="{escape(config.upstream.base_url)}"></label>
           <label>Model<input name="upstream_model" value="{get_value("upstream_model", config.upstream.model)}" placeholder="{escape(config.upstream.model)}"></label>
           <label>API Key<input name="upstream_api_key" value="{get_value("upstream_api_key", config.upstream.api_key)}" autocomplete="off"></label>

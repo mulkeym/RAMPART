@@ -11,6 +11,7 @@ class RuntimeSettings(BaseModel):
     llm_evaluator_base_url: str = ""
     llm_evaluator_model: str = ""
     llm_evaluator_timeout_seconds: Optional[float] = None
+    upstream_enabled: Optional[bool] = None
     upstream_base_url: str = ""
     upstream_model: str = ""
     upstream_api_key: str = ""

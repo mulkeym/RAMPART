@@ -158,6 +158,8 @@ def _apply_local_settings(config: AppConfig) -> None:
         config.llm_evaluator.model = settings.llm_evaluator_model
     if settings.llm_evaluator_timeout_seconds is not None:
         config.llm_evaluator.timeout_seconds = settings.llm_evaluator_timeout_seconds
+    if settings.upstream_enabled is not None:
+        config.upstream.enabled = settings.upstream_enabled
     if settings.upstream_base_url:
         config.upstream.base_url = settings.upstream_base_url
     if settings.upstream_model:
