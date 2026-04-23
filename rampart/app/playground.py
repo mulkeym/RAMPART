@@ -228,12 +228,20 @@ function pgSubmit(action){
   results.innerHTML='<div class="pg-loading">Evaluating...</div>';
   fetch('/ui/playground',{method:'POST',body:new URLSearchParams(data),headers:{'Content-Type':'application/x-www-form-urlencoded'}})
     .then(function(r){return r.text();})
-    .then(function(html){results.innerHTML=html;})
+    .then(function(html){
+      results.innerHTML=html;
+      var pending=document.getElementById('pg-llm-pending');
+      if(pending){
+        fetch('/ui/playground/llm',{method:'POST',body:new URLSearchParams(data),headers:{'Content-Type':'application/x-www-form-urlencoded'}})
+          .then(function(r){return r.text();})
+          .then(function(llmHtml){if(pending.parentNode)pending.parentNode.innerHTML=llmHtml;})
+          .catch(function(e){if(pending.parentNode)pending.innerHTML='<div class="notice error">'+e.message+'</div>';});
+      }
+    })
     .catch(function(e){results.innerHTML='<div class="notice error">'+e.message+'</div>';});
 }
 
 function pgForceSend(){
-  document.getElementById('pg-action').value='force_send';
   pgSubmit('force_send');
 }
 
@@ -277,15 +285,40 @@ async def playground_evaluate(request: Request) -> HTMLResponse:
             r["status"] == "match" and _policy_action(r["policy_id"], selected_policies) == "block"
             for r in policy_results
         )
-        if not has_blocking or action == "force_send":
-            llm_response_html = await _send_upstream(config, form, openai_request, response)
-        else:
+        if has_blocking and action != "force_send":
             llm_response_html = _blocked_response_html()
+        else:
+            # Show results immediately with a loading placeholder; JS will fetch LLM response
+            llm_response_html = '<div id="pg-llm-pending" class="pg-loading">Sending to LLM...</div>'
     else:
         llm_response_html = '<div class="muted">Not sent to upstream &mdash; use "Evaluate &amp; Send" to see LLM response.</div>'
 
     results_html = _render_results(response, policy_results, eval_ms, llm_response_html)
     return HTMLResponse(results_html)
+
+
+@router.post("/ui/playground/llm", response_class=HTMLResponse)
+async def playground_llm(request: Request) -> HTMLResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    config = get_config()
+    form = await _parse_form(request)
+
+    messages = _build_messages(form)
+    openai_request: dict[str, Any] = {"messages": messages}
+    model_override = form.get("model_override", "").strip()
+    if model_override:
+        openai_request["model"] = model_override
+
+    # Re-run evaluation to get sanitized request (lightweight, no LLM calls needed for this)
+    selected_policies = _resolve_selected_policies(config, form)
+    from rampart.app.policy.engine import PolicyEngine
+    engine = PolicyEngine(config, selected_policies)
+    response = await engine.evaluate(openai_request)
+
+    html = await _send_upstream(config, form, openai_request, response)
+    return HTMLResponse(html)
 
 
 async def _parse_form(request: Request) -> dict[str, str]:
