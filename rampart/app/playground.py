@@ -67,7 +67,7 @@ def _playground_page(config, actor: Optional[str], results_html: str = "") -> st
                   <option value="assistant">assistant</option>
                 </select>
                 <div style="flex:1;display:flex;flex-direction:column;gap:6px">
-                  <textarea class="pg-msg-text" name="msg_text_1" rows="3" placeholder="Enter your prompt..."></textarea>
+                  <textarea class="pg-msg-text" name="msg_text_1" rows="3" placeholder="Enter your prompt... (paste images here)"></textarea>
                   <div class="pg-msg-images" id="pg-imgs-1"></div>
                   <div><a href="#" onclick="pgAddImage(1);return false" style="font-size:12px;color:var(--primary)">+ Add Image URL</a></div>
                 </div>
@@ -139,8 +139,9 @@ function pgAddMessage(){
   imgCounts[idx]=0;
   var row=document.createElement('div');
   row.className='pg-msg-row';row.dataset.idx=idx;row.style.marginTop='10px';
-  row.innerHTML='<select class="pg-msg-role" name="msg_role_'+idx+'"><option value="system">system</option><option value="user" selected>user</option><option value="assistant">assistant</option></select><div style="flex:1;display:flex;flex-direction:column;gap:6px"><textarea class="pg-msg-text" name="msg_text_'+idx+'" rows="3" placeholder="Enter message..."></textarea><div class="pg-msg-images" id="pg-imgs-'+idx+'"></div><div><a href="#" onclick="pgAddImage('+idx+');return false" style="font-size:12px;color:var(--primary)">+ Add Image URL</a></div></div><button type="button" class="button small danger" onclick="pgRemoveMessage(this)" title="Remove" style="padding:5px 8px">&#10005;</button>';
+  row.innerHTML='<select class="pg-msg-role" name="msg_role_'+idx+'"><option value="system">system</option><option value="user" selected>user</option><option value="assistant">assistant</option></select><div style="flex:1;display:flex;flex-direction:column;gap:6px"><textarea class="pg-msg-text" name="msg_text_'+idx+'" rows="3" placeholder="Enter message... (paste images here)"></textarea><div class="pg-msg-images" id="pg-imgs-'+idx+'"></div><div><a href="#" onclick="pgAddImage('+idx+');return false" style="font-size:12px;color:var(--primary)">+ Add Image URL</a></div></div><button type="button" class="button small danger" onclick="pgRemoveMessage(this)" title="Remove" style="padding:5px 8px">&#10005;</button>';
   document.getElementById('pg-msg-list').appendChild(row);
+  pgBindPaste(row.querySelector('.pg-msg-text'));
 }
 
 function pgRemoveMessage(btn){
@@ -164,6 +165,37 @@ function pgPreviewImg(input){
   if(input.value.trim()){img.src=input.value.trim();img.style.display='block';}
   else{img.style.display='none';img.src='';}
 }
+
+function pgPasteImage(msgIdx,dataUrl){
+  var c=imgCounts[msgIdx]||0;
+  var container=document.getElementById('pg-imgs-'+msgIdx);
+  var div=document.createElement('div');
+  div.style.cssText='display:flex;gap:6px;align-items:center;margin-top:4px';
+  div.innerHTML='<input type="hidden" name="msg_img_'+msgIdx+'_'+c+'" value="'+dataUrl+'"><img src="'+dataUrl+'" style="max-height:80px;border-radius:4px;border:1px solid rgba(255,255,255,0.08)"><span style="color:var(--muted);font-size:11px">Pasted image</span><button type="button" class="button small danger" onclick="this.parentNode.remove()" style="padding:3px 6px;font-size:11px">&#10005;</button>';
+  container.appendChild(div);
+  imgCounts[msgIdx]=c+1;
+}
+
+function pgBindPaste(textarea){
+  textarea.addEventListener('paste',function(e){
+    var items=e.clipboardData&&e.clipboardData.items;
+    if(!items)return;
+    for(var i=0;i<items.length;i++){
+      if(items[i].type.indexOf('image')===0){
+        e.preventDefault();
+        var file=items[i].getAsFile();
+        var reader=new FileReader();
+        var row=textarea.closest('.pg-msg-row');
+        var idx=row?parseInt(row.dataset.idx):0;
+        reader.onload=function(ev){pgPasteImage(idx,ev.target.result);};
+        reader.readAsDataURL(file);
+        return;
+      }
+    }
+  });
+}
+
+document.querySelectorAll('.pg-msg-text').forEach(pgBindPaste);
 
 function pgToggleAll(link){
   var boxes=document.querySelectorAll('.pg-policies input[type=checkbox]');
