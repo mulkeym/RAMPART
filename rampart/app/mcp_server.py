@@ -168,6 +168,15 @@ def _register_rest_endpoints():
                     body = await request.json()
                 except Exception:
                     body = {}
+                # Handle OpenAI function-call wrappers: {"arguments": {...}} or {"arguments": "..."}
+                if "arguments" in body and len(body) <= 2:
+                    args = body["arguments"]
+                    if isinstance(args, str):
+                        try:
+                            args = json.loads(args)
+                        except (json.JSONDecodeError, TypeError):
+                            args = {}
+                    body = args if isinstance(args, dict) else {}
                 try:
                     if _asyncio.iscoroutinefunction(_handler):
                         result = await _handler(**body)
