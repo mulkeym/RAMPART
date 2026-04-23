@@ -124,6 +124,76 @@ async def mcp_endpoint(request: Request) -> JSONResponse:
 
 # --- OpenAI-Compatible Tool API ---
 
+@router.get("/v1/tools/openapi.json")
+async def tools_openapi(request: Request) -> JSONResponse:
+    """OpenAPI spec for the tools API, for clients that discover tools via OpenAPI."""
+    tool_functions = []
+    for tool in TOOLS:
+        tool_functions.append({
+            "type": "function",
+            "function": {
+                "name": tool["name"],
+                "description": tool["description"],
+                "parameters": tool["inputSchema"],
+            },
+        })
+    spec = {
+        "openapi": "3.1.0",
+        "info": {"title": "RAMPART Tools API", "version": "0.1.0", "description": "RAMPART policy management, client management, evaluation, and monitoring tools."},
+        "servers": [{"url": str(request.base_url).rstrip("/")}],
+        "paths": {
+            "/v1/tools/call": {
+                "post": {
+                    "operationId": "callTool",
+                    "summary": "Call a RAMPART tool by name",
+                    "security": [{"BearerAuth": []}],
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {"type": "string", "description": "Tool name", "enum": [t["name"] for t in TOOLS]},
+                                        "arguments": {"type": "object", "description": "Tool arguments"},
+                                    },
+                                    "required": ["name"],
+                                },
+                            },
+                        },
+                    },
+                    "responses": {
+                        "200": {"description": "Tool result", "content": {"application/json": {"schema": {"type": "object", "properties": {"result": {}}}}}},
+                        "401": {"description": "Invalid admin key"},
+                        "404": {"description": "Unknown tool"},
+                    },
+                },
+            },
+        },
+        "components": {
+            "securitySchemes": {"BearerAuth": {"type": "http", "scheme": "bearer"}},
+            "schemas": {
+                "ToolDefinition": {
+                    "type": "object",
+                    "properties": {
+                        "type": {"type": "string", "const": "function"},
+                        "function": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string"},
+                                "description": {"type": "string"},
+                                "parameters": {"type": "object"},
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        "tools": tool_functions,
+    }
+    return JSONResponse(spec)
+
+
 @router.get("/v1/tools")
 async def list_tools_rest(request: Request) -> JSONResponse:
     ok, message = _check_admin_key(request)
