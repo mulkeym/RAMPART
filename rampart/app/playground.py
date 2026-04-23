@@ -492,6 +492,22 @@ def _blocked_response_html() -> str:
     """
 
 
+def _source_breakdown(policy_results: list[dict]) -> str:
+    sources: dict[str, int] = {}
+    for pr in policy_results:
+        for v in pr.get("violations", []):
+            src = v.source if hasattr(v, "source") else "deterministic"
+            sources[src] = sources.get(src, 0) + 1
+    if not sources:
+        return "no violations"
+    parts = []
+    for src in ["deterministic", "llm", "vision"]:
+        count = sources.get(src, 0)
+        if count:
+            parts.append(f"{count} {src}")
+    return ", ".join(parts) + " violation" + ("s" if sum(sources.values()) != 1 else "")
+
+
 def _render_results(response, policy_results: list[dict], eval_ms: int, llm_response_html: str) -> str:
     has_match = any(r["status"] == "match" for r in policy_results)
     decision_class = "blocked" if has_match else "accepted"
@@ -539,7 +555,7 @@ def _render_results(response, policy_results: list[dict], eval_ms: int, llm_resp
           <div class="pg-decision {decision_class}">{decision_label}</div>
           {"".join(f'<div style="padding:8px 12px;border-radius:6px;background:var(--warning-bg);border:1px solid var(--warning-border);color:var(--warning);font-size:12px;margin-bottom:8px">{escape(w)}</div>' for w in (response.warnings or []))}
           {"".join(policy_items)}
-          <div class="muted" style="font-size:11px;margin-top:12px">Evaluated in {eval_ms}ms</div>
+          <div class="muted" style="font-size:11px;margin-top:12px">Policy evaluation: {eval_ms}ms &mdash; {_source_breakdown(policy_results)}</div>
         </div>
         <div>
           <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:8px">Sanitized Request</div>
