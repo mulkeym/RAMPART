@@ -575,13 +575,13 @@ def _policy_row(policy: PolicyConfig) -> str:
       <tr>
         <td><code>{escape(policy.id)}</code><div class="muted">{escape(policy.description)}</div></td>
         <td><span class="pill {status}">{status}</span></td>
-        <td>{escape(policy.severity)}</td>
+        <td>{_severity_pill(policy.severity)}</td>
         <td>{escape(policy.category)}</td>
         <td>{escape(policy.action)}</td>
         <td>{len(policy.checks)}</td>
         <td class="row-actions">
           <a class="button small" href="/ui/policies/{escape(policy.id)}">Edit</a>
-          <form method="post" action="/ui/policies/{escape(policy.id)}/delete">
+          <form class="confirm-action" method="post" action="/ui/policies/{escape(policy.id)}/delete" data-confirm-title="Delete Policy?" data-confirm-message="Are you sure you want to delete {escape(policy.id)}? This cannot be undone.">
             <button class="button small danger" type="submit">Delete</button>
           </form>
         </td>
@@ -767,6 +767,10 @@ def _policy_summary_row(summary) -> str:
 
 def _empty_row(colspan: int, message: str) -> str:
     return f'<tr><td colspan="{colspan}" class="muted">{escape(message)}</td></tr>'
+
+
+def _severity_pill(severity: str) -> str:
+    return f'<span class="pill severity-{escape(severity)}">{escape(severity)}</span>'
 
 
 def _select(name: str, options: list[str], selected: str) -> str:
