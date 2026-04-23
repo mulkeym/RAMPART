@@ -34,3 +34,27 @@ If there is no violation, return {{"violates": false, "message": ""}}.
 Request:
 {request_json}
 """
+
+
+def build_vision_check_prompt(policy: PolicyConfig, check: CheckConfig) -> str:
+    instruction = check.instruction or policy.description
+    return f"""You are RAMPART, a strict API request firewall evaluator.
+
+Evaluate the attached image against exactly one policy.
+
+Policy ID: {policy.id}
+Severity: {policy.severity}
+Category: {policy.category}
+Description: {policy.description}
+
+Plain-text policy rule:
+{instruction}
+
+Examine the image for any content that violates the rule.
+Consider text visible in the image, objects, scenes, and context.
+
+Return only valid JSON matching this shape:
+{{"violates": true, "message": "short reason"}}
+
+If there is no violation, return {{"violates": false, "message": ""}}.
+"""
