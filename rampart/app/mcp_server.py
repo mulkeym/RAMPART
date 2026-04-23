@@ -46,24 +46,27 @@ def _jsonrpc_error(id: Any, code: int, message: str) -> dict:
     return {"jsonrpc": "2.0", "id": id, "error": {"code": code, "message": message}}
 
 
-def _validate_admin_key(request: Request) -> Optional[JSONResponse]:
+def _check_admin_key(request: Request) -> tuple[bool, str]:
+    """Returns (ok, error_message). Shared by MCP and REST endpoints."""
     config = get_config()
     admin_key = config.auth.mcp_admin_key
     if not admin_key:
-        return JSONResponse(
-            _jsonrpc_error(None, -32000, "MCP is disabled — set RAMPART_MCP_ADMIN_KEY to enable"),
-            status_code=403,
-        )
+        return False, "MCP is disabled — set RAMPART_MCP_ADMIN_KEY to enable"
     provided = request.headers.get("authorization", "")
     if provided.lower().startswith("bearer "):
         provided = provided[7:].strip()
     if not provided:
         provided = request.query_params.get("admin_key", "")
     if provided != admin_key:
-        return JSONResponse(
-            _jsonrpc_error(None, -32000, "Invalid MCP admin key"),
-            status_code=401,
-        )
+        return False, "Invalid admin key"
+    return True, ""
+
+
+def _validate_admin_key(request: Request) -> Optional[JSONResponse]:
+    ok, message = _check_admin_key(request)
+    if not ok:
+        code = 403 if "disabled" in message else 401
+        return JSONResponse(_jsonrpc_error(None, -32000, message), status_code=code)
     return None
 
 
@@ -117,6 +120,53 @@ async def mcp_endpoint(request: Request) -> JSONResponse:
             }))
 
     return JSONResponse(_jsonrpc_error(msg_id, -32601, f"Method not found: {method}"))
+
+
+# --- OpenAI-Compatible Tool API ---
+
+@router.get("/v1/tools")
+async def list_tools_rest(request: Request) -> JSONResponse:
+    ok, message = _check_admin_key(request)
+    if not ok:
+        return JSONResponse({"error": {"message": message}}, status_code=403 if "disabled" in message else 401)
+    return JSONResponse({
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": tool["name"],
+                    "description": tool["description"],
+                    "parameters": tool["inputSchema"],
+                },
+            }
+            for tool in TOOLS
+        ]
+    })
+
+
+@router.post("/v1/tools/call")
+async def call_tool_rest(request: Request) -> JSONResponse:
+    ok, message = _check_admin_key(request)
+    if not ok:
+        return JSONResponse({"error": {"message": message}}, status_code=403 if "disabled" in message else 401)
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": {"message": "Invalid JSON"}}, status_code=400)
+    tool_name = body.get("name", "")
+    arguments = body.get("arguments", {})
+    handler = TOOL_HANDLERS.get(tool_name)
+    if not handler:
+        return JSONResponse({"error": {"message": f"Unknown tool: {tool_name}"}}, status_code=404)
+    try:
+        import asyncio
+        if asyncio.iscoroutinefunction(handler):
+            result = await handler(**arguments)
+        else:
+            result = handler(**arguments)
+        return JSONResponse({"result": json.loads(result) if isinstance(result, str) else result})
+    except Exception as e:
+        return JSONResponse({"error": {"message": str(e)}}, status_code=500)
 
 
 # --- Policy Management Tools ---
