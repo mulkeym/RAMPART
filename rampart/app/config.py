@@ -29,6 +29,7 @@ class AuthConfig(BaseModel):
     session_max_age_seconds: int = 28800
     secure_cookies: bool = False
     audit_log_path: str = "logs/audit.jsonl"
+    mcp_admin_key: str = ""
 
 
 class ClientStoreConfig(BaseModel):
@@ -124,6 +125,7 @@ def _apply_env_overrides(config: AppConfig) -> None:
     auth.session_secret = os.getenv("RAMPART_SESSION_SECRET", auth.session_secret)
     auth.audit_log_path = os.getenv("RAMPART_AUDIT_LOG", auth.audit_log_path)
     auth.secure_cookies = _env_bool("RAMPART_SECURE_COOKIES", auth.secure_cookies)
+    auth.mcp_admin_key = os.getenv("RAMPART_MCP_ADMIN_KEY", auth.mcp_admin_key)
     tracking = config.tracking
     tracking.enabled = _env_bool("RAMPART_TRACKING_ENABLED", tracking.enabled)
     tracking.log_path = os.getenv("RAMPART_EVALUATION_LOG", tracking.log_path)
