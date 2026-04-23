@@ -640,8 +640,10 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
         <fieldset class="fieldset">
           <legend>Default Pass-Through LLM</legend>
           <div class="hint">Used by /v1/chat/completions when an API key does not override backend settings.</div>
-          <label class="checkbox"><input type="checkbox" name="upstream_enabled" {"checked" if config.upstream.enabled else ""}> Enabled</label>
-          <div class="hint">When disabled, requests are evaluated but not forwarded to any upstream LLM. Anonymous users cannot use the LLM.</div>
+          <div>
+            <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;color:var(--text-secondary)">Enabled <input type="checkbox" name="upstream_enabled" {"checked" if config.upstream.enabled else ""} style="width:auto"></label>
+            <div class="hint" style="margin-top:4px">When disabled, requests are evaluated but not forwarded to any upstream LLM. Anonymous users cannot use the LLM.</div>
+          </div>
           <label>Base URL<input name="upstream_base_url" value="{get_value("upstream_base_url", config.upstream.base_url)}" placeholder="{escape(config.upstream.base_url)}"></label>
           <label>Model<input name="upstream_model" value="{get_value("upstream_model", config.upstream.model)}" placeholder="{escape(config.upstream.model)}"></label>
           <label>API Key<input name="upstream_api_key" value="{get_value("upstream_api_key", config.upstream.api_key)}" autocomplete="off"></label>
