@@ -504,6 +504,7 @@ def _render_results(response, policy_results: list[dict], eval_ms: int, llm_resp
         <div>
           <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:8px">Policy Results</div>
           <div class="pg-decision {decision_class}">{decision_label}</div>
+          {"".join(f'<div style="padding:8px 12px;border-radius:6px;background:var(--warning-bg);border:1px solid var(--warning-border);color:var(--warning);font-size:12px;margin-bottom:8px">{escape(w)}</div>' for w in (response.warnings or []))}
           {"".join(policy_items)}
           <div class="muted" style="font-size:11px;margin-top:12px">Evaluated in {eval_ms}ms</div>
         </div>
