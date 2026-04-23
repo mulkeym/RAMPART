@@ -360,6 +360,7 @@ def _build_policy_results(policies: list[PolicyConfig], response) -> list[dict[s
     violation_map: dict[str, list] = {}
     for v in response.violations:
         violation_map.setdefault(v.policy_id, []).append(v)
+    selected_ids = {p.id for p in policies}
     results = []
     for policy in policies:
         violations = violation_map.get(policy.id, [])
@@ -371,6 +372,17 @@ def _build_policy_results(policies: list[PolicyConfig], response) -> list[dict[s
             "status": "match" if violations else "pass",
             "violations": violations,
         })
+    # Surface any violations not mapped to a selected policy (e.g. llm-evaluator-unavailable)
+    for policy_id, violations in violation_map.items():
+        if policy_id not in selected_ids:
+            results.append({
+                "policy_id": policy_id,
+                "severity": violations[0].severity,
+                "action": "block",
+                "description": violations[0].message,
+                "status": "match",
+                "violations": violations,
+            })
     return results
 
 
@@ -448,8 +460,9 @@ def _blocked_response_html() -> str:
 
 
 def _render_results(response, policy_results: list[dict], eval_ms: int, llm_response_html: str) -> str:
-    decision_class = "accepted" if response.decision == "accept" else "blocked"
-    decision_label = "ACCEPTED" if response.decision == "accept" else "BLOCKED"
+    has_match = any(r["status"] == "match" for r in policy_results)
+    decision_class = "blocked" if has_match else "accepted"
+    decision_label = "BLOCKED" if has_match else "ACCEPTED"
 
     policy_items = []
     for pr in policy_results:
