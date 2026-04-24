@@ -31,11 +31,36 @@
     function extractPrompt(body) {
         try {
             const msg = body.messages && body.messages[0];
-            if (msg && msg.content && msg.content.parts && msg.content.parts[0]) {
-                return typeof msg.content.parts[0] === 'string' ? msg.content.parts[0] : null;
+            if (!msg || !msg.content || !msg.content.parts) return null;
+            console.log('[RAMPART] Message parts:', JSON.stringify(msg.content.parts).substring(0, 500));
+            // Extract text from parts — parts can be strings or objects
+            const textParts = [];
+            for (const part of msg.content.parts) {
+                if (typeof part === 'string') {
+                    textParts.push(part);
+                } else if (part && typeof part === 'object' && part.text) {
+                    textParts.push(part.text);
+                }
             }
+            return textParts.join('\n') || null;
         } catch (e) {}
         return null;
+    }
+
+    function extractImageAssets(body) {
+        // Extract image asset pointers from ChatGPT message parts
+        try {
+            const msg = body.messages && body.messages[0];
+            if (!msg || !msg.content || !msg.content.parts) return [];
+            const assets = [];
+            for (const part of msg.content.parts) {
+                if (part && typeof part === 'object' && part.content_type === 'image_asset_pointer') {
+                    assets.push(part.asset_pointer || '');
+                }
+            }
+            return assets;
+        } catch (e) {}
+        return [];
     }
 
     function extractSanitizedPrompt(result) {
@@ -103,11 +128,41 @@
         return div.innerHTML;
     }
 
+    // Cache uploaded images by asset pointer
+    const imageCache = {};
+
     // Override fetch
     const originalFetch = window.fetch;
     window.fetch = async function(url, options) {
         if (typeof url === 'string' && options && options.method === 'POST') {
-            console.log('[RAMPART] Intercepted POST to:', url);
+            // Intercept image uploads to cache them
+            if (url.includes('/backend-api/files') || url.includes('/backend-api/f/files')) {
+                const resp = await originalFetch.call(this, url, options);
+                // Clone and read the response to get the file ID
+                try {
+                    const clone = resp.clone();
+                    const data = await clone.json();
+                    if (data && data.file_id) {
+                        console.log('[RAMPART] File uploaded, caching ID:', data.file_id);
+                        // Try to read the upload body as base64
+                        if (options.body instanceof FormData) {
+                            const file = options.body.get('file');
+                            if (file && file instanceof Blob) {
+                                const reader = new FileReader();
+                                const dataUrl = await new Promise(resolve => {
+                                    reader.onload = () => resolve(reader.result);
+                                    reader.readAsDataURL(file);
+                                });
+                                imageCache['file-service://' + data.file_id] = dataUrl;
+                                console.log('[RAMPART] Cached image for file:', data.file_id);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[RAMPART] Could not cache uploaded file:', e);
+                }
+                return resp;
+            }
         }
         if (typeof url === 'string' && (url.includes('/backend-api/conversation') || url.includes('/backend-api/f/conversation')) && options && options.method === 'POST') {
             console.log('[RAMPART] Conversation request detected:', url);
@@ -119,9 +174,19 @@
             try {
                 const body = JSON.parse(options.body);
                 const prompt = extractPrompt(body);
+                const imageAssets = extractImageAssets(body);
 
-                if (prompt) {
-                    const result = await sendToBridge('evaluate', { prompt: prompt });
+                // Build image URLs from cache
+                const images = [];
+                for (const asset of imageAssets) {
+                    if (imageCache[asset]) {
+                        images.push(imageCache[asset]);
+                        console.log('[RAMPART] Including cached image for:', asset);
+                    }
+                }
+
+                if (prompt || images.length > 0) {
+                    const result = await sendToBridge('evaluate', { prompt: prompt || '', images: images });
 
                     if (result && result.error) {
                         console.warn('[RAMPART] Evaluation failed, letting through:', result.error);

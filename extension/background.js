@@ -1,13 +1,13 @@
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'evaluate') {
-        evaluatePrompt(message.prompt).then(sendResponse).catch(err => {
+        evaluatePrompt(message.prompt, message.images).then(sendResponse).catch(err => {
             sendResponse({ error: err.message });
         });
         return true; // async response
     }
 });
 
-async function evaluatePrompt(prompt) {
+async function evaluatePrompt(prompt, images) {
     const settings = await chrome.storage.sync.get(['rampartUrl', 'apiKey', 'enabled']);
 
     if (settings.enabled === false) {
@@ -20,6 +20,17 @@ async function evaluatePrompt(prompt) {
         headers['Authorization'] = 'Bearer ' + settings.apiKey;
     }
 
+    // Build message content — text only or multimodal
+    let content;
+    if (images && images.length > 0) {
+        content = [{ type: 'text', text: prompt || '' }];
+        for (const imageUrl of images) {
+            content.push({ type: 'image_url', image_url: { url: imageUrl } });
+        }
+    } else {
+        content = prompt;
+    }
+
     try {
         const response = await fetch(url + '/v1/rampart/evaluate', {
             method: 'POST',
@@ -27,7 +38,7 @@ async function evaluatePrompt(prompt) {
             body: JSON.stringify({
                 request: {
                     model: 'chatgpt',
-                    messages: [{ role: 'user', content: prompt }]
+                    messages: [{ role: 'user', content: content }]
                 }
             })
         });

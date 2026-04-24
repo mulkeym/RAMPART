@@ -18,7 +18,8 @@ window.addEventListener('message', async (event) => {
         try {
             const result = await chrome.runtime.sendMessage({
                 type: 'evaluate',
-                prompt: event.data.prompt
+                prompt: event.data.prompt,
+                images: event.data.images || []
             });
             window.postMessage({ source: 'rampart-bridge', id: event.data.id, result: result }, '*');
         } catch (e) {
