@@ -23,6 +23,10 @@ system messages, tool definitions, requested tool calls, and the apparent intent
 of the request. Do not require exact keyword matches. If the request violates
 the rule by meaning or context, mark it as a violation.
 
+Note: Requests may contain "[base64 image omitted]" placeholders where images were
+attached. This is normal multimodal content and should NOT be treated as suspicious
+encoding, injection, or obfuscation.
+
 Return only valid JSON matching this shape:
 {{
   "violates": true,
