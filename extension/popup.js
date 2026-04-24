@@ -52,24 +52,40 @@ document.getElementById('enrollBtn').addEventListener('click', async () => {
         status.innerHTML = '<span class="dot red"></span><span>URL and group key required</span>';
         return;
     }
+    // Check for manual email entry
+    const manualEmail = document.getElementById('manualEmail').value.trim();
+    if (manualEmail) {
+        userEmail = manualEmail;
+        userName = manualEmail.split('@')[0];
+    }
+
     status.innerHTML = '<span class="dot gray"></span><span>Checking identity...</span>';
     try {
         // Try mTLS identity server for CAC-based identity
         let identityNonce = '';
+        let identityResolved = false;
         try {
             const idUrl = url.replace(/:\d+$/, ':8443');
             const idResp = await fetch(idUrl + '/whoami', { method: 'GET' });
             if (idResp.ok) {
                 const idData = await idResp.json();
-                identityNonce = idData.nonce || '';
-                if (idData.identity) {
-                    userEmail = userEmail || idData.san || idData.identity;
-                    userName = userName || idData.cn || idData.identity;
+                if (idData.nonce && idData.identity) {
+                    identityNonce = idData.nonce;
+                    userEmail = idData.san || idData.identity;
+                    userName = idData.cn || idData.identity;
+                    identityResolved = true;
                     status.innerHTML = '<span class="dot green"></span><span>Identity: ' + idData.identity + '</span>';
                 }
             }
         } catch (e) {
-            // Identity server not available — continue with Chrome identity
+            // Identity server not available
+        }
+
+        // If no identity from cert or Chrome, prompt for email
+        if (!identityResolved && !userEmail) {
+            document.getElementById('manual-identity').classList.remove('hidden');
+            status.innerHTML = '<span class="dot red"></span><span>Enter your email address to enroll</span>';
+            return;
         }
 
         status.innerHTML = '<span class="dot gray"></span><span>Enrolling...</span>';

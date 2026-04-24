@@ -35,6 +35,15 @@
     <label>Group Key
       <input type="text" id="groupKey" placeholder="grp_...">
     </label>
+    <div id="manual-identity" class="hidden">
+      <label>Email Address
+        <input type="email" id="manualEmail" placeholder="john.doe@company.com">
+      </label>
+      <div class="status" style="margin-top:0;margin-bottom:8px">
+        <span class="dot gray"></span>
+        <span style="font-size:10px">No certificate detected — enter your email to enroll</span>
+      </div>
+    </div>
     <div class="actions">
       <button id="enrollBtn">Enroll</button>
     </div>
