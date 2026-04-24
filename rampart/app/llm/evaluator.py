@@ -45,10 +45,14 @@ class LlmEvaluator:
         return await self.evaluate(request, stage="post")
 
     async def _evaluate_standard(self, request: dict[str, Any], checks: list) -> list[Violation]:
+        import asyncio
         request_json = json.dumps(_strip_image_data(request), sort_keys=True, ensure_ascii=True)
+        results = await asyncio.gather(*(
+            self._evaluate_standard_check(request_json, policy, check)
+            for policy, check in checks
+        ))
         violations: list[Violation] = []
-        for policy, check in checks:
-            result = await self._evaluate_standard_check(request_json, policy, check)
+        for result in results:
             violations.extend(result)
         return violations
 
@@ -118,12 +122,13 @@ class LlmEvaluator:
         if not user_text.strip():
             return []
 
-        # Run sequentially to avoid model context contamination on single-instance LLM servers
-        import sys
-        print(f"[GUARDIAN EVAL] {len(checks)} checks to run: {[p.id for p, c in checks]}", file=sys.stderr, flush=True)
+        import asyncio
+        results = await asyncio.gather(*(
+            self._evaluate_guardian_check(user_text, policy, check)
+            for policy, check in checks
+        ))
         violations: list[Violation] = []
-        for policy, check in checks:
-            result = await self._evaluate_guardian_check(user_text, policy, check)
+        for result in results:
             violations.extend(result)
         return violations
 
