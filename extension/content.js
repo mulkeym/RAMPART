@@ -29,11 +29,47 @@
     });
 
     function extractPrompt(body) {
+        // ChatGPT format: messages[0].content.parts[0]
+        try {
+            const msg = body.messages && body.messages[0];
+            if (msg && msg.content && msg.content.parts) {
+                console.log('[RAMPART] ChatGPT parts:', JSON.stringify(msg.content.parts).substring(0, 500));
+                const textParts = [];
+                for (const part of msg.content.parts) {
+                    if (typeof part === 'string') textParts.push(part);
+                    else if (part && typeof part === 'object' && part.text) textParts.push(part.text);
+                }
+                if (textParts.length > 0) return textParts.join('\n');
+            }
+        } catch (e) {}
+
+        // Ask Sage / generic formats
+        // Try: body.message (string)
+        if (typeof body.message === 'string' && body.message.trim()) return body.message;
+        // Try: body.prompt (string)
+        if (typeof body.prompt === 'string' && body.prompt.trim()) return body.prompt;
+        // Try: body.query (string)
+        if (typeof body.query === 'string' && body.query.trim()) return body.query;
+        // Try: body.input (string)
+        if (typeof body.input === 'string' && body.input.trim()) return body.input;
+        // Try: body.content (string)
+        if (typeof body.content === 'string' && body.content.trim()) return body.content;
+        // Try: OpenAI standard messages format
+        try {
+            if (Array.isArray(body.messages)) {
+                const last = body.messages[body.messages.length - 1];
+                if (last && typeof last.content === 'string') return last.content;
+            }
+        } catch (e) {}
+
+        return null;
+    }
+
+    // Kept for backward compat — extractPrompt now handles all formats
+    function _extractPromptLegacy(body) {
         try {
             const msg = body.messages && body.messages[0];
             if (!msg || !msg.content || !msg.content.parts) return null;
-            console.log('[RAMPART] Message parts:', JSON.stringify(msg.content.parts).substring(0, 500));
-            // Extract text from parts — parts can be strings or objects
             const textParts = [];
             for (const part of msg.content.parts) {
                 if (typeof part === 'string') {
@@ -154,7 +190,24 @@
     // Override fetch
     const originalFetch = window.fetch;
     window.fetch = async function(url, options) {
-        if (typeof url === 'string' && (url.includes('/backend-api/conversation') || url.includes('/backend-api/f/conversation') || url.includes('/backend-anon/conversation') || url.includes('/backend-anon/f/conversation')) && options && options.method === 'POST') {
+        // Log all Ask Sage POST requests to help identify the conversation endpoint
+        if (typeof url === 'string' && url.includes('asksage.ai') && options && options.method === 'POST') {
+            try {
+                const bodyPreview = typeof options.body === 'string' ? options.body.substring(0, 300) : '';
+                console.log('[RAMPART] Ask Sage POST:', url, '| body:', bodyPreview);
+            } catch(e) {}
+        }
+        // Detect conversation endpoints across supported AI chat sites
+        const isConversation = typeof url === 'string' && options && options.method === 'POST' && (
+            // ChatGPT
+            url.includes('/backend-api/conversation') ||
+            url.includes('/backend-api/f/conversation') ||
+            url.includes('/backend-anon/conversation') ||
+            url.includes('/backend-anon/f/conversation') ||
+            // Ask Sage
+            (url.includes('asksage.ai') && (url.includes('/chat') || url.includes('/query') || url.includes('/ask') || url.includes('/message') || url.includes('/completion')))
+        );
+        if (isConversation) {
             console.log('[RAMPART] Conversation request detected:', url);
             const settings = await sendToBridge('getSettings', {});
             if (settings && settings.enabled === false) {
