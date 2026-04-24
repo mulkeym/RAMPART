@@ -20,6 +20,9 @@ class LlmEvaluator:
         if not llm_config.enabled:
             return []
 
+        import sys
+        print(f"[LLM EVAL] stage={stage} | all_policies={[p.id for p in self.policies]} | mode={llm_config.mode}", file=sys.stderr, flush=True)
+
         policies_with_llm_checks = [
             (policy, check)
             for policy in self.policies
@@ -74,8 +77,12 @@ class LlmEvaluator:
                 response.raise_for_status()
 
             content = response.json()["choices"][0]["message"]["content"]
-            data = json.loads(_strip_json_fence(content))
+            import sys
+            print(f"[STANDARD RAW] policy={policy.id} | content={repr(content[:200])}", file=sys.stderr, flush=True)
+            data = _parse_llm_json(content)
         except (httpx.HTTPError, KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
+            import sys
+            print(f"[STANDARD ERROR] policy={policy.id} | {error.__class__.__name__}: {error}", file=sys.stderr, flush=True)
             if not llm_config.fail_closed_on_error:
                 return []
             return [
@@ -116,6 +123,8 @@ class LlmEvaluator:
             return []
 
         # Run sequentially to avoid model context contamination on single-instance LLM servers
+        import sys
+        print(f"[GUARDIAN EVAL] {len(checks)} checks to run: {[p.id for p, c in checks]}", file=sys.stderr, flush=True)
         violations: list[Violation] = []
         for policy, check in checks:
             result = await self._evaluate_guardian_check(user_text, policy, check)
@@ -268,6 +277,31 @@ def _strip_image_data(request: dict[str, Any]) -> dict[str, Any]:
                 if url.startswith("data:"):
                     image_url["url"] = "[base64 image omitted]"
     return stripped
+
+
+def _parse_llm_json(content: str) -> dict:
+    """Parse JSON from LLM response, handling common formatting issues."""
+    import re
+    stripped = _strip_json_fence(content)
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        pass
+    # Fix missing commas between fields: }"field" → },"field"
+    fixed = re.sub(r'("\s*)\n(\s*")', r'\1,\n\2', stripped)
+    try:
+        return json.loads(fixed)
+    except json.JSONDecodeError:
+        pass
+    # Last resort: extract violates boolean
+    violates_match = re.search(r'"violates"\s*:\s*(true|false)', stripped, re.IGNORECASE)
+    message_match = re.search(r'"message"\s*:\s*"([^"]*)"', stripped)
+    if violates_match:
+        return {
+            "violates": violates_match.group(1).lower() == "true",
+            "message": message_match.group(1) if message_match else "",
+        }
+    raise json.JSONDecodeError("Cannot parse LLM response", stripped, 0)
 
 
 def _strip_json_fence(content: str) -> str:
