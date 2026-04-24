@@ -1,0 +1,122 @@
+#rampart-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 999999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    animation: rampart-fadein 0.15s ease-out;
+}
+
+@keyframes rampart-fadein {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.rampart-modal {
+    background: #151d27;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 560px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    color: #e2e8f0;
+    font-size: 14px;
+}
+
+.rampart-modal-header {
+    font-size: 18px;
+    font-weight: 700;
+    color: #f87171;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.rampart-violations {
+    margin-bottom: 16px;
+}
+
+.rampart-violation-item {
+    padding: 8px 10px;
+    background: rgba(248, 113, 113, 0.08);
+    border: 1px solid rgba(248, 113, 113, 0.2);
+    border-radius: 6px;
+    margin-bottom: 6px;
+    font-size: 13px;
+}
+
+.rampart-severity {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.rampart-severity-critical { background: rgba(248, 113, 113, 0.2); color: #f87171; }
+.rampart-severity-high { background: rgba(251, 191, 36, 0.2); color: #fbbf24; }
+.rampart-severity-medium { background: rgba(148, 163, 184, 0.15); color: #94a3b8; }
+.rampart-severity-low { background: rgba(100, 116, 139, 0.15); color: #64748b; }
+
+.rampart-section {
+    margin-bottom: 12px;
+}
+
+.rampart-section-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #64748b;
+    margin-bottom: 6px;
+}
+
+.rampart-prompt-box {
+    background: #0b0f14;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    padding: 10px;
+    font-size: 13px;
+    white-space: pre-wrap;
+    max-height: 120px;
+    overflow-y: auto;
+    color: #94a3b8;
+}
+
+.rampart-prompt-box.rampart-sanitized {
+    border-color: rgba(74, 222, 128, 0.2);
+    color: #4ade80;
+}
+
+.rampart-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.rampart-btn {
+    flex: 1;
+    padding: 10px;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.rampart-btn-primary {
+    background: #38bdf8;
+    color: #0b0f14;
+}
+
+.rampart-btn-secondary {
+    background: rgba(255, 255, 255, 0.06);
+    color: #94a3b8;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
