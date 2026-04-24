@@ -270,6 +270,7 @@ async def update_settings(request: Request) -> HTMLResponse:
     form = await _form_data(request)
     try:
         settings = RuntimeSettings(
+            llm_evaluator_enabled=form.get("llm_evaluator_enabled") == "on",
             llm_evaluator_base_url=form.get("llm_evaluator_base_url", "").strip(),
             llm_evaluator_model=form.get("llm_evaluator_model", "").strip(),
             llm_evaluator_timeout_seconds=_optional_float(form.get("llm_evaluator_timeout_seconds", "")),
@@ -704,6 +705,10 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
         <fieldset class="fieldset">
           <legend>Context Analysis LLM</legend>
           <div class="hint">Used for context-aware policy evaluation.</div>
+          <div>
+            <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;color:var(--text-secondary)">Enabled <input type="checkbox" name="llm_evaluator_enabled" {"checked" if config.llm_evaluator.enabled else ""} style="width:auto"></label>
+            <div class="hint" style="margin-top:4px">When disabled, all LLM-based policy checks are skipped. Only deterministic checks (regex, tool allowlist, size) will run.</div>
+          </div>
           <label>Base URL<input name="llm_evaluator_base_url" value="{get_value("llm_evaluator_base_url", config.llm_evaluator.base_url)}" placeholder="{escape(config.llm_evaluator.base_url)}"></label>
           <label>Model<input name="llm_evaluator_model" value="{get_value("llm_evaluator_model", config.llm_evaluator.model)}" placeholder="{escape(config.llm_evaluator.model)}"></label>
           <label>Timeout Seconds<input name="llm_evaluator_timeout_seconds" value="{get_value("llm_evaluator_timeout_seconds", config.llm_evaluator.timeout_seconds)}" inputmode="decimal"></label>

@@ -169,6 +169,8 @@ def _apply_local_settings(config: AppConfig) -> None:
     from rampart.app.settings_store import load_settings
 
     settings = load_settings(config.settings.path)
+    if settings.llm_evaluator_enabled is not None:
+        config.llm_evaluator.enabled = settings.llm_evaluator_enabled
     if settings.llm_evaluator_base_url:
         config.llm_evaluator.base_url = settings.llm_evaluator_base_url
     if settings.llm_evaluator_model:

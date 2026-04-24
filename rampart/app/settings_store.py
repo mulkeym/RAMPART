@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 
 class RuntimeSettings(BaseModel):
+    llm_evaluator_enabled: Optional[bool] = None
     llm_evaluator_base_url: str = ""
     llm_evaluator_model: str = ""
     llm_evaluator_timeout_seconds: Optional[float] = None
