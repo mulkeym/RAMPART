@@ -20,6 +20,7 @@ from rampart.app.security.audit import audit_event
 from rampart.app.security.auth import authenticate, clear_session_cookie, read_session_user, require_ui_user, set_session_cookie
 from rampart.app.security.credentials import change_password
 from rampart.app.settings_store import RuntimeSettings, load_settings, save_settings
+from rampart.app.tls import tls_verify as _tls_verify
 from rampart.app.tracking import load_evaluation_events, summarize_customers, summarize_policies
 
 router = APIRouter(include_in_schema=False)
@@ -236,7 +237,7 @@ async def test_llm_connection(request: Request) -> HTMLResponse:
         headers["authorization"] = f"Bearer {api_key}"
     start = time.time()
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=15, verify=_tls_verify()) as client:
             resp = await client.post(f"{base_url.rstrip('/')}/chat/completions", json=payload, headers=headers)
         elapsed = int((time.time() - start) * 1000)
         if resp.status_code >= 400:
@@ -267,7 +268,7 @@ async def list_models(request: Request) -> HTMLResponse:
     if api_key:
         headers["authorization"] = f"Bearer {api_key}"
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with httpx.AsyncClient(timeout=10, verify=_tls_verify()) as client:
             resp = await client.get(f"{base_url.rstrip('/')}/models", headers=headers)
         if resp.status_code >= 400:
             return HTMLResponse("[]")

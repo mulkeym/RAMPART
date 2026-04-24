@@ -5,13 +5,14 @@ from typing import Any
 import httpx
 
 from rampart.app.config import UpstreamConfig
+from rampart.app.tls import tls_verify
 
 
 async def proxy_chat_completion(config: UpstreamConfig, payload: dict[str, Any]) -> tuple[dict[str, Any], int]:
     headers = {"content-type": "application/json"}
     if config.api_key:
         headers["authorization"] = f"Bearer {config.api_key}"
-    async with httpx.AsyncClient(timeout=config.timeout_seconds) as client:
+    async with httpx.AsyncClient(timeout=config.timeout_seconds, verify=tls_verify()) as client:
         response = await client.post(
             f"{config.base_url.rstrip('/')}/chat/completions",
             json=payload,

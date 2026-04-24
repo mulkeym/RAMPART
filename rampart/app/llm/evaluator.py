@@ -8,6 +8,7 @@ import httpx
 from rampart.app.config import AppConfig, CheckConfig, PolicyConfig
 from rampart.app.llm.prompts import build_policy_check_prompt
 from rampart.app.models import Violation
+from rampart.app.tls import tls_verify
 
 
 class LlmEvaluator:
@@ -69,7 +70,7 @@ class LlmEvaluator:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=llm_config.timeout_seconds) as client:
+            async with httpx.AsyncClient(timeout=llm_config.timeout_seconds, verify=tls_verify()) as client:
                 response = await client.post(
                     f"{llm_config.base_url.rstrip('/')}/chat/completions",
                     json=payload,
@@ -158,7 +159,7 @@ class LlmEvaluator:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=llm_config.timeout_seconds) as client:
+            async with httpx.AsyncClient(timeout=llm_config.timeout_seconds, verify=tls_verify()) as client:
                 response = await client.post(
                     f"{llm_config.base_url.rstrip('/')}/chat/completions",
                     json=payload,

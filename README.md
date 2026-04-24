@@ -189,6 +189,7 @@ to `data/settings.json`.
 
 | Variable | Purpose |
 |----------|---------|
+| `RAMPART_TLS_VERIFY` | Set to `false` to disable TLS certificate verification (for self-signed certs) |
 | `RAMPART_POLICY_FILE` | Path to policy YAML file |
 | `RAMPART_ADMIN_USERNAME` | Admin username (default: `admin`) |
 | `RAMPART_ADMIN_PASSWORD_HASH` | Admin password hash (disables UI password changes) |

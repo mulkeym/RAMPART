@@ -8,6 +8,7 @@ import httpx
 from rampart.app.config import AppConfig, CheckConfig, PolicyConfig
 from rampart.app.llm.prompts import build_vision_check_prompt
 from rampart.app.models import Violation
+from rampart.app.tls import tls_verify
 
 
 class VisionEvaluator:
@@ -67,7 +68,7 @@ class VisionEvaluator:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=vision_config.timeout_seconds) as client:
+            async with httpx.AsyncClient(timeout=vision_config.timeout_seconds, verify=tls_verify()) as client:
                 response = await client.post(
                     f"{vision_config.base_url.rstrip('/')}/chat/completions",
                     json=payload,
