@@ -215,21 +215,10 @@ def _parse_guardian_response(body: dict, threshold: float) -> tuple[bool, float,
     score_match = re.search(r"<score>\s*(yes|no)\s*</score>", content, re.IGNORECASE)
     if score_match:
         answer = score_match.group(1).strip().lower()
-        # Still try logprobs for confidence, but we have the answer from the tag
-        yes_prob = 1.0 if answer == "yes" else 0.0
-        if logprobs_data and isinstance(logprobs_data, dict):
-            for token_entry in (logprobs_data.get("content") or []):
-                if not isinstance(token_entry, dict):
-                    continue
-                for entry in token_entry.get("top_logprobs", []):
-                    t = entry.get("token", "").strip().lower()
-                    if t == "yes":
-                        yes_prob = math.exp(entry.get("logprob", -100))
-                        break
-                if yes_prob not in (0.0, 1.0):
-                    break
-        violates = answer == "yes" and yes_prob > threshold
-        return violates, yes_prob, answer
+        # The score tag is the definitive answer — trust it directly
+        violates = answer == "yes"
+        confidence = 1.0 if violates else 0.0
+        return violates, confidence, answer
     if logprobs_data and isinstance(logprobs_data, dict):
         token_logprobs = logprobs_data.get("content", [])
         # Skip past any <think> tokens to find the actual Yes/No token
