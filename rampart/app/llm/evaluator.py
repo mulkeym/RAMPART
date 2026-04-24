@@ -45,14 +45,10 @@ class LlmEvaluator:
         return await self.evaluate(request, stage="post")
 
     async def _evaluate_standard(self, request: dict[str, Any], checks: list) -> list[Violation]:
-        import asyncio
         request_json = json.dumps(_strip_image_data(request), sort_keys=True, ensure_ascii=True)
-        results = await asyncio.gather(*(
-            self._evaluate_standard_check(request_json, policy, check)
-            for policy, check in checks
-        ))
         violations: list[Violation] = []
-        for result in results:
+        for policy, check in checks:
+            result = await self._evaluate_standard_check(request_json, policy, check)
             violations.extend(result)
         return violations
 
