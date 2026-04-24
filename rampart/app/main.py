@@ -101,7 +101,20 @@ def _resolve_client_record(config: AppConfig, request: Request) -> Optional[Clie
 
 def _resolve_policies(config: AppConfig, client: Optional[ClientRecord]) -> list[PolicyConfig]:
     enabled_policies = [policy for policy in config.policies if policy.enabled]
-    if client is None or not client.policy_ids:
+    if client is None:
+        return enabled_policies
+    # For group-enrolled clients, resolve policies from the group dynamically
+    if client.notes and client.notes.startswith("Group: ") and client.team:
+        from rampart.app.group_store import get_group
+        group = get_group(client.team)
+        if group and group.policy_ids:
+            assigned = set(group.policy_ids)
+            return [policy for policy in enabled_policies if policy.id in assigned]
+        # Group exists but has no policies assigned = all enabled
+        if group:
+            return enabled_policies
+    # Static policy assignment
+    if not client.policy_ids:
         return enabled_policies
     assigned = set(client.policy_ids)
     return [policy for policy in enabled_policies if policy.id in assigned]
