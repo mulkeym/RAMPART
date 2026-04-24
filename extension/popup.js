@@ -52,8 +52,27 @@ document.getElementById('enrollBtn').addEventListener('click', async () => {
         status.innerHTML = '<span class="dot red"></span><span>URL and group key required</span>';
         return;
     }
-    status.innerHTML = '<span class="dot gray"></span><span>Enrolling...</span>';
+    status.innerHTML = '<span class="dot gray"></span><span>Checking identity...</span>';
     try {
+        // Try mTLS identity server for CAC-based identity
+        let identityNonce = '';
+        try {
+            const idUrl = url.replace(/:\d+$/, ':8443');
+            const idResp = await fetch(idUrl + '/whoami', { method: 'GET' });
+            if (idResp.ok) {
+                const idData = await idResp.json();
+                identityNonce = idData.nonce || '';
+                if (idData.identity) {
+                    userEmail = userEmail || idData.san || idData.identity;
+                    userName = userName || idData.cn || idData.identity;
+                    status.innerHTML = '<span class="dot green"></span><span>Identity: ' + idData.identity + '</span>';
+                }
+            }
+        } catch (e) {
+            // Identity server not available — continue with Chrome identity
+        }
+
+        status.innerHTML = '<span class="dot gray"></span><span>Enrolling...</span>';
         const resp = await fetch(url + '/v1/enroll', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -61,7 +80,8 @@ document.getElementById('enrollBtn').addEventListener('click', async () => {
                 enrollment_key: groupKey,
                 user_name: userName,
                 user_email: userEmail,
-                device_id: getDeviceId()
+                device_id: getDeviceId(),
+                identity_nonce: identityNonce
             })
         });
         const data = await resp.json();

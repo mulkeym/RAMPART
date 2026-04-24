@@ -29,6 +29,10 @@ app = FastAPI(
     description="Request And Model Prompt Analysis & Routing Tool",
     version="0.1.0",
 )
+
+# Start mTLS identity server if certs are available
+from rampart.app.identity import start_identity_server
+start_identity_server()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

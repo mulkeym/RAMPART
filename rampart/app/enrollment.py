@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from rampart.app.client_store import create_client, get_client, rotate_client_key
 from rampart.app.config import get_config
 from rampart.app.group_store import get_group_by_enrollment_key
+from rampart.app.identity import consume_nonce
 
 router = APIRouter()
 
@@ -31,6 +32,7 @@ async def enroll(request: Request) -> JSONResponse:
     user_name = body.get("user_name", "").strip()
     user_email = body.get("user_email", "").strip()
     device_id = body.get("device_id", "").strip()
+    identity_nonce = body.get("identity_nonce", "").strip()
 
     if not enrollment_key:
         return JSONResponse({"status": "error", "message": "Enrollment key is required"}, status_code=400)
@@ -39,8 +41,22 @@ async def enroll(request: Request) -> JSONResponse:
     if not group:
         return JSONResponse({"status": "error", "message": "Invalid enrollment key"}, status_code=403)
 
+    # If identity nonce provided, use verified CAC identity as client ID
+    verified_identity = None
+    if identity_nonce:
+        result = consume_nonce(identity_nonce)
+        if result:
+            san, cn = result
+            verified_identity = san or cn
+            user_email = user_email or san
+            user_name = user_name or cn
+
     config = get_config()
-    client_id = _generate_client_id(user_email, device_id)
+    # Use verified SAN as client ID if available, otherwise generate from email
+    if verified_identity:
+        client_id = re.sub(r"[^a-zA-Z0-9@._-]", "-", verified_identity)[:60]
+    else:
+        client_id = _generate_client_id(user_email, device_id)
     server_url = f"{request.url.scheme}://{request.headers.get('host', 'localhost:8080')}"
 
     existing = get_client(client_id, config.clients.path)
