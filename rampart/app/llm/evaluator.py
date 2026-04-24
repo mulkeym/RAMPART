@@ -21,9 +21,6 @@ class LlmEvaluator:
         if not llm_config.enabled:
             return []
 
-        import sys
-        print(f"[LLM EVAL] stage={stage} | all_policies={[p.id for p in self.policies]} | mode={llm_config.mode}", file=sys.stderr, flush=True)
-
         policies_with_llm_checks = [
             (policy, check)
             for policy in self.policies
@@ -78,12 +75,8 @@ class LlmEvaluator:
                 response.raise_for_status()
 
             content = response.json()["choices"][0]["message"]["content"]
-            import sys
-            print(f"[STANDARD RAW] policy={policy.id} | content={repr(content[:200])}", file=sys.stderr, flush=True)
             data = _parse_llm_json(content)
         except (httpx.HTTPError, KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
-            import sys
-            print(f"[STANDARD ERROR] policy={policy.id} | {error.__class__.__name__}: {error}", file=sys.stderr, flush=True)
             if not llm_config.fail_closed_on_error:
                 return []
             return [
@@ -167,12 +160,7 @@ class LlmEvaluator:
                 response.raise_for_status()
 
             body = response.json()
-            import sys
-            raw_content = (body.get("choices", [{}])[0].get("message") or {}).get("content", "")
-            print(f"[GUARDIAN SENT] policy={policy.id} | risk_def={repr(risk_definition[:100])}", file=sys.stderr, flush=True)
-            print(f"[GUARDIAN RAW] policy={policy.id} | content={repr(raw_content[:300])}", file=sys.stderr, flush=True)
             violates, confidence, raw_output = _parse_guardian_response(body, llm_config.confidence_threshold)
-            print(f"[GUARDIAN] policy={policy.id} | violates={violates} | confidence={confidence:.3f} | parsed={raw_output[:100]}", file=sys.stderr, flush=True)
         except (httpx.HTTPError, KeyError, IndexError, TypeError) as error:
             if not llm_config.fail_closed_on_error:
                 return []

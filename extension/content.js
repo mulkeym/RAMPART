@@ -1,6 +1,5 @@
 (function() {
     'use strict';
-    console.log('[RAMPART] Content script loaded on', window.location.href);
 
     let requestId = 0;
     const pendingRequests = {};
@@ -33,7 +32,6 @@
         try {
             const msg = body.messages && body.messages[0];
             if (msg && msg.content && msg.content.parts) {
-                console.log('[RAMPART] ChatGPT parts:', JSON.stringify(msg.content.parts).substring(0, 500));
                 const textParts = [];
                 for (const part of msg.content.parts) {
                     if (typeof part === 'string') textParts.push(part);
@@ -48,27 +46,21 @@
             try {
                 const parsed = JSON.parse(body.message);
                 if (Array.isArray(parsed)) {
-                    // Find the last user message ("me")
                     for (let i = parsed.length - 1; i >= 0; i--) {
                         if (parsed[i].user === 'me' && parsed[i].message) {
-                            console.log('[RAMPART] Ask Sage user message:', parsed[i].message.substring(0, 100));
                             return parsed[i].message;
                         }
                     }
                 }
             } catch (e) {}
-            // Not JSON array — use as-is
             return body.message;
         }
-        // Try: body.prompt (string)
+        // Generic formats
         if (typeof body.prompt === 'string' && body.prompt.trim()) return body.prompt;
-        // Try: body.query (string)
         if (typeof body.query === 'string' && body.query.trim()) return body.query;
-        // Try: body.input (string)
         if (typeof body.input === 'string' && body.input.trim()) return body.input;
-        // Try: body.content (string)
         if (typeof body.content === 'string' && body.content.trim()) return body.content;
-        // Try: OpenAI standard messages format
+        // OpenAI standard messages format
         try {
             if (Array.isArray(body.messages)) {
                 const last = body.messages[body.messages.length - 1];
@@ -79,26 +71,7 @@
         return null;
     }
 
-    // Kept for backward compat — extractPrompt now handles all formats
-    function _extractPromptLegacy(body) {
-        try {
-            const msg = body.messages && body.messages[0];
-            if (!msg || !msg.content || !msg.content.parts) return null;
-            const textParts = [];
-            for (const part of msg.content.parts) {
-                if (typeof part === 'string') {
-                    textParts.push(part);
-                } else if (part && typeof part === 'object' && part.text) {
-                    textParts.push(part.text);
-                }
-            }
-            return textParts.join('\n') || null;
-        } catch (e) {}
-        return null;
-    }
-
     function extractImageAssets(body) {
-        // Extract image asset pointers from ChatGPT message parts
         try {
             const msg = body.messages && body.messages[0];
             if (!msg || !msg.content || !msg.content.parts) return [];
@@ -129,7 +102,6 @@
 
     function showViolationOverlay(result, originalPrompt) {
         return new Promise((resolve) => {
-            const sanitizedPrompt = extractSanitizedPrompt(result);
             const violations = result.violations || [];
 
             const overlay = document.createElement('div');
@@ -172,17 +144,14 @@
     const pastedImages = [];
 
     document.addEventListener('paste', function(e) {
-        console.log('[RAMPART] Paste event detected, items:', e.clipboardData ? e.clipboardData.items.length : 0);
         if (!e.clipboardData || !e.clipboardData.items) return;
         for (const item of e.clipboardData.items) {
-            console.log('[RAMPART] Paste item type:', item.type);
             if (item.type.indexOf('image') === 0) {
                 const file = item.getAsFile();
                 if (!file) continue;
                 const reader = new FileReader();
                 reader.onload = function(ev) {
                     pastedImages.push(ev.target.result);
-                    console.log('[RAMPART] Cached pasted image from clipboard (' + Math.round(file.size/1024) + 'KB)');
                 };
                 reader.readAsDataURL(file);
             }
@@ -197,7 +166,6 @@
             const reader = new FileReader();
             reader.onload = function(ev) {
                 pastedImages.push(ev.target.result);
-                console.log('[RAMPART] Cached dropped image (' + Math.round(file.size/1024) + 'KB)');
             };
             reader.readAsDataURL(file);
         }
@@ -206,13 +174,6 @@
     // Override fetch
     const originalFetch = window.fetch;
     window.fetch = async function(url, options) {
-        // Log all Ask Sage POST requests to help identify the conversation endpoint
-        if (typeof url === 'string' && url.includes('asksage.ai') && options && options.method === 'POST') {
-            try {
-                const bodyPreview = typeof options.body === 'string' ? options.body.substring(0, 300) : '';
-                console.log('[RAMPART] Ask Sage POST:', url, '| body:', bodyPreview);
-            } catch(e) {}
-        }
         // Detect conversation endpoints across supported AI chat sites
         const isConversation = typeof url === 'string' && options && options.method === 'POST' && (
             // ChatGPT
@@ -224,7 +185,6 @@
             (url.includes('asksage.ai') && url.includes('/server/query'))
         );
         if (isConversation) {
-            console.log('[RAMPART] Conversation request detected:', url);
             const settings = await sendToBridge('getSettings', {});
             if (settings && settings.enabled === false) {
                 return originalFetch.call(this, url, options);
@@ -241,13 +201,11 @@
                         if (typeof value === 'string') {
                             body[key] = value;
                         } else if (value instanceof File) {
-                            console.log('[RAMPART] FormData file:', key, '| type:', value.type, '| size:', Math.round(value.size/1024) + 'KB');
                             if (value.type.startsWith('image/')) {
                                 formImagePromises.push(new Promise((resolve) => {
                                     const reader = new FileReader();
                                     reader.onload = function(ev) {
                                         pastedImages.push(ev.target.result);
-                                        console.log('[RAMPART] Cached image from FormData (' + Math.round(value.size/1024) + 'KB)');
                                         resolve();
                                     };
                                     reader.readAsDataURL(value);
@@ -258,7 +216,6 @@
                     if (formImagePromises.length > 0) {
                         await Promise.all(formImagePromises);
                     }
-                    console.log('[RAMPART] Parsed FormData keys:', Object.keys(body).join(', '));
                 } else if (typeof rawBody === 'string') {
                     body = JSON.parse(rawBody);
                 } else {
@@ -271,15 +228,12 @@
                 const images = [];
                 if (pastedImages.length > 0) {
                     images.push(...pastedImages);
-                    console.log('[RAMPART] Including', images.length, 'image(s) for evaluation');
                 }
 
                 if (prompt || images.length > 0) {
-                    console.log('[RAMPART] Evaluating prompt:', (prompt || '').substring(0, 100), '| images:', images.length);
                     const result = await sendToBridge('evaluate', { prompt: prompt || '', images: images });
 
                     if (result && result.error) {
-                        console.warn('[RAMPART] Evaluation failed, letting through:', result.error);
                         return originalFetch.call(this, url, options);
                     }
 
@@ -289,18 +243,12 @@
                         if (userChoice.action === 'cancel') {
                             throw new DOMException('Request blocked by RAMPART', 'AbortError');
                         }
-
-                        if (userChoice.action === 'sanitize') {
-                            body.messages[0].content.parts[0] = userChoice.prompt;
-                            options = { ...options, body: JSON.stringify(body) };
-                        }
                     }
                     // Clear image cache after evaluation
                     pastedImages.length = 0;
                 }
             } catch (e) {
                 if (e.name === 'AbortError') throw e;
-                console.warn('[RAMPART] Error during evaluation:', e);
             }
         }
         return originalFetch.call(this, url, options);
