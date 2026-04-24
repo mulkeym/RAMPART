@@ -99,22 +99,12 @@
                 '<div class="rampart-violations">' + violationItems + '</div>' +
                 '<div class="rampart-section"><div class="rampart-section-label">Original Prompt</div>' +
                 '<div class="rampart-prompt-box">' + escapeHtml(originalPrompt) + '</div></div>' +
-                (sanitizedPrompt ?
-                    '<div class="rampart-section"><div class="rampart-section-label">Sanitized Prompt</div>' +
-                    '<div class="rampart-prompt-box rampart-sanitized">' + escapeHtml(sanitizedPrompt) + '</div></div>' : '') +
                 '<div class="rampart-actions">' +
-                (sanitizedPrompt ? '<button class="rampart-btn rampart-btn-primary" id="rampart-send-sanitized">Send Sanitized</button>' : '') +
-                '<button class="rampart-btn rampart-btn-secondary" id="rampart-cancel">Cancel</button>' +
+                '<button class="rampart-btn rampart-btn-primary" id="rampart-cancel">Acknowledged</button>' +
                 '</div></div>';
 
             document.body.appendChild(overlay);
 
-            if (sanitizedPrompt) {
-                document.getElementById('rampart-send-sanitized').onclick = () => {
-                    overlay.remove();
-                    resolve({ action: 'sanitize', prompt: sanitizedPrompt });
-                };
-            }
             document.getElementById('rampart-cancel').onclick = () => {
                 overlay.remove();
                 resolve({ action: 'cancel' });
