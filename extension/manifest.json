@@ -1,0 +1,33 @@
+{
+    "manifest_version": 3,
+    "name": "RAMPART - Prompt Firewall",
+    "version": "0.1.0",
+    "description": "Evaluate and sanitize AI prompts before submission using RAMPART policy engine",
+    "permissions": ["storage"],
+    "host_permissions": ["https://chatgpt.com/*", "http://*/*", "https://*/*"],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "content_scripts": [{
+        "matches": ["https://chatgpt.com/*"],
+        "js": ["bridge.js"],
+        "run_at": "document_start"
+    }],
+    "web_accessible_resources": [{
+        "resources": ["content.js", "styles.css"],
+        "matches": ["https://chatgpt.com/*"]
+    }],
+    "action": {
+        "default_popup": "popup.html",
+        "default_icon": {
+            "16": "icons/icon16.png",
+            "48": "icons/icon48.png",
+            "128": "icons/icon128.png"
+        }
+    },
+    "icons": {
+        "16": "icons/icon16.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
+    }
+}
