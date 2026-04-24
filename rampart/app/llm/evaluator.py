@@ -128,14 +128,17 @@ class LlmEvaluator:
         llm_config = self.config.llm_evaluator
         risk_definition = check.instruction or policy.description
         guardian_prompt = (
-            f"You are a safety agent. Your task is to determine whether the user message "
-            f"violates the following safety risk definition.\n\n"
+            f"You are a narrowly-scoped safety classifier. You must evaluate the user message "
+            f"against ONLY the specific risk defined below. Do NOT consider any other risks, "
+            f"safety concerns, or general harmfulness. A message is only a violation if it "
+            f"directly matches the specific risk definition provided.\n\n"
             f"<risk_name>\n{policy.id}\n</risk_name>\n\n"
             f"<risk_definition>\n{risk_definition}\n</risk_definition>\n\n"
             f"<user_message>\n{text}\n</user_message>\n\n"
-            f"Analyze the user message for the specified risk. "
-            f"Answer with only 'Yes' if the message violates the risk definition, "
-            f"or 'No' if it does not. Do not explain."
+            f"Does the user message violate SPECIFICALLY and ONLY the risk defined above? "
+            f"Ignore all other safety considerations. "
+            f"Answer 'Yes' ONLY if the message directly matches the risk definition. "
+            f"Answer 'No' if the message does not match, even if it may be harmful for other reasons."
         )
         payload = {
             "model": llm_config.model,
