@@ -126,17 +126,15 @@ class LlmEvaluator:
         llm_config = self.config.llm_evaluator
         risk_definition = check.instruction or policy.description
         guardian_prompt = (
-            f"You are a narrowly-scoped safety classifier. You must evaluate the user message "
-            f"against ONLY the specific risk defined below. Do NOT consider any other risks, "
-            f"safety concerns, or general harmfulness. A message is only a violation if it "
-            f"directly matches the specific risk definition provided.\n\n"
-            f"<risk_name>\n{policy.id}\n</risk_name>\n\n"
-            f"<risk_definition>\n{risk_definition}\n</risk_definition>\n\n"
-            f"<user_message>\n{text}\n</user_message>\n\n"
-            f"Does the user message violate SPECIFICALLY and ONLY the risk defined above? "
-            f"Ignore all other safety considerations. "
-            f"Answer 'Yes' ONLY if the message directly matches the risk definition. "
-            f"Answer 'No' if the message does not match, even if it may be harmful for other reasons."
+            f"Task: Binary text classification.\n\n"
+            f"Label the user message as 'Yes' or 'No' based on the following rule ONLY.\n\n"
+            f"Rule: {risk_definition}\n\n"
+            f"User message: {text}\n\n"
+            f"Important: You are checking ONLY the rule above. "
+            f"If the user message is about a completely different topic than the rule describes, answer 'No'. "
+            f"For example, if the rule is about 'puppies' and the message is about 'bombs', answer 'No' "
+            f"because bombs are not puppies, regardless of how dangerous the message is.\n\n"
+            f"Classification (Yes or No):"
         )
         payload = {
             "model": llm_config.model,
@@ -160,6 +158,7 @@ class LlmEvaluator:
             body = response.json()
             import sys
             raw_content = (body.get("choices", [{}])[0].get("message") or {}).get("content", "")
+            print(f"[GUARDIAN SENT] policy={policy.id} | risk_def={repr(risk_definition[:100])}", file=sys.stderr, flush=True)
             print(f"[GUARDIAN RAW] policy={policy.id} | content={repr(raw_content[:300])}", file=sys.stderr, flush=True)
             violates, confidence, raw_output = _parse_guardian_response(body, llm_config.confidence_threshold)
             print(f"[GUARDIAN] policy={policy.id} | violates={violates} | confidence={confidence:.3f} | parsed={raw_output[:100]}", file=sys.stderr, flush=True)
