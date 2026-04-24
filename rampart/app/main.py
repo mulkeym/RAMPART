@@ -77,6 +77,16 @@ async def evaluate_chat_completions(payload: dict[str, Any], request: Request):
                 usage.get("completion_tokens", 0),
                 config.clients.path,
             )
+    # Post-LLM evaluation
+    if upstream_status < 400 and config.llm_evaluator.post_llm_enabled and isinstance(upstream_body, dict):
+        response_text = _extract_response_text(upstream_body)
+        if response_text:
+            post_violations = await engine.post_evaluate(response_text)
+            if post_violations:
+                blocking = [v for v in post_violations if _is_post_blocking(v, policies)]
+                if blocking:
+                    upstream_body = _sanitize_llm_response(upstream_body)
+                    upstream_body["rampart_post_violations"] = [v.model_dump() for v in post_violations]
     return JSONResponse(upstream_body, status_code=upstream_status)
 
 
@@ -131,3 +141,31 @@ def _track_evaluation(config, request: Request, response: EvaluationResponse, cl
     client = client_context_from_record(client_record, fallback)
     applied_policies = [policy.id for policy in policies if policy.enabled]
     write_evaluation_event(config.tracking, client, response, applied_policies)
+
+
+def _extract_response_text(body: dict[str, Any]) -> Optional[str]:
+    choices = body.get("choices", [])
+    if not choices or not isinstance(choices[0], dict):
+        return None
+    msg = choices[0].get("message")
+    if not isinstance(msg, dict):
+        return None
+    content = msg.get("content")
+    return content if isinstance(content, str) else None
+
+
+def _is_post_blocking(violation, policies: list[PolicyConfig]) -> bool:
+    for policy in policies:
+        if policy.id == violation.policy_id:
+            return policy.action == "block"
+    return True
+
+
+def _sanitize_llm_response(body: dict[str, Any]) -> dict[str, Any]:
+    sanitized = deepcopy(body)
+    choices = sanitized.get("choices", [])
+    if choices and isinstance(choices[0], dict):
+        msg = choices[0].get("message")
+        if isinstance(msg, dict):
+            msg["content"] = "[Response blocked by RAMPART policy]"
+    return sanitized
