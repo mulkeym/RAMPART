@@ -205,7 +205,7 @@
             url.includes('/backend-anon/conversation') ||
             url.includes('/backend-anon/f/conversation') ||
             // Ask Sage
-            (url.includes('asksage.ai') && (url.includes('/chat') || url.includes('/query') || url.includes('/ask') || url.includes('/message') || url.includes('/completion')))
+            (url.includes('asksage.ai') && url.includes('/server/query'))
         );
         if (isConversation) {
             console.log('[RAMPART] Conversation request detected:', url);
@@ -215,7 +215,20 @@
             }
 
             try {
-                const body = JSON.parse(options.body);
+                // Parse body — handle both JSON and FormData
+                let body;
+                let rawBody = options.body;
+                if (rawBody instanceof FormData) {
+                    body = {};
+                    for (const [key, value] of rawBody.entries()) {
+                        if (typeof value === 'string') body[key] = value;
+                    }
+                    console.log('[RAMPART] Parsed FormData keys:', Object.keys(body).join(', '));
+                } else if (typeof rawBody === 'string') {
+                    body = JSON.parse(rawBody);
+                } else {
+                    body = {};
+                }
                 const prompt = extractPrompt(body);
                 const imageAssets = extractImageAssets(body);
 
