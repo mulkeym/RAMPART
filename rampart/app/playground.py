@@ -270,6 +270,9 @@ async def playground_evaluate(request: Request) -> HTMLResponse:
         openai_request["model"] = model_override
 
     selected_policies = _resolve_selected_policies(config, form)
+    import sys
+    print(f"[PLAYGROUND] selected policies: {[p.id for p in selected_policies]}", file=sys.stderr, flush=True)
+    print(f"[PLAYGROUND] form policy keys: {[k for k in form if k.startswith('policy_')]}", file=sys.stderr, flush=True)
 
     from rampart.app.policy.engine import PolicyEngine
     engine = PolicyEngine(config, selected_policies)
