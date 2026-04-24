@@ -4,42 +4,90 @@
   <meta charset="utf-8">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { width: 320px; background: #0b0f14; color: #e2e8f0; font-family: -apple-system, sans-serif; font-size: 13px; padding: 16px; }
-    h1 { font-size: 16px; color: #38bdf8; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    body { width: 340px; background: #0b0f14; color: #e2e8f0; font-family: -apple-system, sans-serif; font-size: 13px; padding: 16px; }
+    h1 { font-size: 16px; color: #38bdf8; margin-bottom: 12px; }
     label { display: block; margin-bottom: 10px; color: #94a3b8; font-size: 12px; }
     input { width: 100%; background: #151d27; border: 1px solid rgba(255,255,255,0.08); border-radius: 4px; padding: 8px; color: #e2e8f0; font-size: 13px; margin-top: 4px; }
     input:focus { outline: none; border-color: rgba(56,189,248,0.5); }
     .actions { display: flex; gap: 8px; margin-top: 12px; }
     button { background: #38bdf8; color: #0b0f14; border: none; border-radius: 4px; padding: 8px 12px; font-size: 12px; font-weight: 600; cursor: pointer; flex: 1; }
     button.secondary { background: rgba(255,255,255,0.06); color: #94a3b8; border: 1px solid rgba(255,255,255,0.1); }
+    button.danger { background: rgba(248,113,113,0.08); color: #f87171; border: 1px solid rgba(248,113,113,0.2); }
     .status { display: flex; align-items: center; gap: 6px; margin-top: 10px; font-size: 11px; color: #64748b; }
-    .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
     .dot.green { background: #4ade80; }
     .dot.red { background: #f87171; }
     .dot.gray { background: #64748b; }
     .toggle { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
     .toggle input { width: auto; margin: 0; }
+    .info { background: #151d27; border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 10px; margin-bottom: 10px; font-size: 12px; }
+    .info .label { color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .info .value { color: #e2e8f0; margin-top: 2px; }
+    .hidden { display: none; }
   </style>
 </head>
 <body>
   <h1>RAMPART</h1>
-  <div class="toggle">
-    <input type="checkbox" id="enabled" checked>
-    <label for="enabled" style="margin:0">Enabled</label>
+  <div id="enroll-view" class="hidden">
+    <label>Server URL
+      <input type="text" id="url" placeholder="http://localhost:8080">
+    </label>
+    <label>Group Key
+      <input type="text" id="groupKey" placeholder="grp_...">
+    </label>
+    <div class="actions">
+      <button id="enrollBtn">Enroll</button>
+    </div>
+    <div class="status" id="enroll-status">
+      <span class="dot gray"></span>
+      <span>Enter your group key to enroll</span>
+    </div>
   </div>
-  <label>RAMPART Server URL
-    <input type="text" id="url" placeholder="http://localhost:8080">
-  </label>
-  <label>API Key
-    <input type="text" id="apiKey" placeholder="rmp_live_...">
-  </label>
-  <div class="actions">
-    <button id="save">Save</button>
-    <button id="test" class="secondary">Test</button>
+  <div id="enrolled-view" class="hidden">
+    <div class="toggle">
+      <input type="checkbox" id="enabled" checked>
+      <label for="enabled" style="margin:0">Enabled</label>
+    </div>
+    <div class="info">
+      <div class="label">User</div>
+      <div class="value" id="enrolled-user"></div>
+    </div>
+    <div class="info">
+      <div class="label">Group</div>
+      <div class="value" id="enrolled-group"></div>
+    </div>
+    <div class="info">
+      <div class="label">Client ID</div>
+      <div class="value" id="enrolled-client"></div>
+    </div>
+    <div class="status" id="enrolled-status">
+      <span class="dot green"></span>
+      <span>Connected</span>
+    </div>
+    <div class="actions">
+      <button id="reenrollBtn" class="secondary">Re-enroll</button>
+      <button id="settingsBtn" class="secondary">Settings</button>
+    </div>
   </div>
-  <div class="status" id="status">
-    <span class="dot gray"></span>
-    <span>Not tested</span>
+  <div id="settings-view" class="hidden">
+    <label>Server URL
+      <input type="text" id="settings-url" placeholder="http://localhost:8080">
+    </label>
+    <label>API Key (manual)
+      <input type="text" id="settings-apiKey" placeholder="rmp_live_...">
+    </label>
+    <div class="actions">
+      <button id="saveSettingsBtn">Save</button>
+      <button id="testBtn" class="secondary">Test</button>
+      <button id="backBtn" class="secondary">Back</button>
+    </div>
+    <div class="status" id="settings-status">
+      <span class="dot gray"></span>
+      <span></span>
+    </div>
+    <div class="actions" style="margin-top:8px">
+      <button id="unenrollBtn" class="danger">Reset &amp; Unenroll</button>
+    </div>
   </div>
   <script src="popup.js"></script>
 </body>
