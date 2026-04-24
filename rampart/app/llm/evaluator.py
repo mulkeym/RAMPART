@@ -127,20 +127,24 @@ class LlmEvaluator:
     async def _evaluate_guardian_check(self, text: str, policy: PolicyConfig, check: CheckConfig) -> list[Violation]:
         llm_config = self.config.llm_evaluator
         risk_definition = check.instruction or policy.description
+        guardian_prompt = (
+            f"You are a safety agent. Your task is to determine whether the user message "
+            f"violates the following safety risk definition.\n\n"
+            f"<risk_name>\n{policy.id}\n</risk_name>\n\n"
+            f"<risk_definition>\n{risk_definition}\n</risk_definition>\n\n"
+            f"<user_message>\n{text}\n</user_message>\n\n"
+            f"Analyze the user message for the specified risk. "
+            f"Answer with only 'Yes' if the message violates the risk definition, "
+            f"or 'No' if it does not. Do not explain."
+        )
         payload = {
             "model": llm_config.model,
             "messages": [
-                {"role": "user", "content": text},
+                {"role": "user", "content": guardian_prompt},
             ],
-            "chat_template_kwargs": {
-                "guardian_config": {
-                    "risk_name": policy.id,
-                    "risk_definition": risk_definition,
-                }
-            },
             "logprobs": True,
             "top_logprobs": 5,
-            "max_tokens": 20,
+            "max_tokens": 5,
             "temperature": 0,
         }
 
@@ -154,6 +158,8 @@ class LlmEvaluator:
 
             body = response.json()
             violates, confidence, raw_output = _parse_guardian_response(body, llm_config.confidence_threshold)
+            import sys
+            print(f"[GUARDIAN] policy={policy.id} | violates={violates} | confidence={confidence:.3f} | output={raw_output[:100]}", file=sys.stderr, flush=True)
         except (httpx.HTTPError, KeyError, IndexError, TypeError) as error:
             if not llm_config.fail_closed_on_error:
                 return []
@@ -190,6 +196,7 @@ def _check_matches_stage(check: CheckConfig, stage: str) -> bool:
 def _parse_guardian_response(body: dict, threshold: float) -> tuple[bool, float, str]:
     """Parse Granite Guardian response. Returns (violates, confidence, raw_output)."""
     import math
+    import re
 
     choices = body.get("choices", [])
     if not choices:
@@ -197,17 +204,34 @@ def _parse_guardian_response(body: dict, threshold: float) -> tuple[bool, float,
 
     choice = choices[0]
     content = (choice.get("message") or {}).get("content", "").strip()
+    # Strip <think>...</think> blocks if present
+    content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
 
     logprobs_data = choice.get("logprobs")
     if logprobs_data and isinstance(logprobs_data, dict):
         token_logprobs = logprobs_data.get("content", [])
-        if token_logprobs and isinstance(token_logprobs[0], dict):
-            top = token_logprobs[0].get("top_logprobs", [])
+        # Skip past any <think> tokens to find the actual Yes/No token
+        for token_entry in token_logprobs:
+            if not isinstance(token_entry, dict):
+                continue
+            main_token = token_entry.get("token", "").strip().lower()
+            if main_token in ("<think>", "</think>", "") or len(main_token) > 5:
+                continue
+            top = token_entry.get("top_logprobs", [])
+            yes_prob = 0.0
             for entry in top:
                 token = entry.get("token", "").strip().lower()
                 if token == "yes":
                     yes_prob = math.exp(entry.get("logprob", -100))
-                    return yes_prob > threshold, yes_prob, content
+                    break
+            if yes_prob > 0:
+                return yes_prob > threshold, yes_prob, content
+            # Check if main token is "no" — definitive pass
+            if main_token == "no":
+                return False, 0.0, content
+            # Check if main token is "yes" — definitive fail
+            if main_token == "yes":
+                return True, 1.0, content
 
     # Fallback: check text content if no logprobs
     violates = content.lower().startswith("yes")
