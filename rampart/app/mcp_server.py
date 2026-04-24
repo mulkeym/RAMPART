@@ -15,6 +15,10 @@ from rampart.app.client_store import (
     set_client_enabled, update_client as store_update_client,
 )
 from rampart.app.tracking import load_evaluation_events
+from rampart.app.group_store import (
+    GroupRecord, create_group as store_create_group_record, delete_group as store_delete_group_record,
+    get_group, list_groups as store_list_groups, update_group as store_update_group_record,
+)
 
 router = APIRouter()
 
@@ -51,6 +55,7 @@ WRITE_TOOLS = {
     "create_policy", "update_policy", "delete_policy",
     "create_client", "update_client", "delete_client",
     "toggle_client", "rotate_client_key", "assign_policies",
+    "create_group", "update_group", "delete_group",
 }
 
 
@@ -783,6 +788,90 @@ def handle_get_violations(
         ],
     }
     return json.dumps(result, indent=2)
+
+
+# --- Group Management Tools ---
+
+@_handler(
+    "list_groups",
+    "List all enrollment groups for Chrome extension auto-provisioning.",
+    {"type": "object", "properties": {}, "required": []},
+)
+def handle_list_groups() -> str:
+    groups = store_list_groups()
+    result = [
+        {"id": g.id, "name": g.name, "enabled": g.enabled, "policy_ids": g.policy_ids, "created_at": g.created_at}
+        for g in groups
+    ]
+    return json.dumps(result, indent=2)
+
+
+@_handler(
+    "create_group",
+    "Create a new enrollment group for Chrome extension auto-provisioning. Returns the enrollment key to share with users.",
+    {
+        "type": "object",
+        "properties": {
+            "group_id": {"type": "string", "description": "Unique group identifier"},
+            "name": {"type": "string", "description": "Display name"},
+            "policy_ids": {"type": "array", "items": {"type": "string"}, "default": [], "description": "Policies to assign to enrolled users"},
+        },
+        "required": ["group_id", "name"],
+    },
+)
+def handle_create_group(group_id: str, name: str, policy_ids: Optional[list] = None) -> str:
+    try:
+        group = store_create_group_record(group_id=group_id, name=name, policy_ids=policy_ids)
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+    return json.dumps({"created": group.id, "enrollment_key": group.enrollment_key, "name": group.name})
+
+
+@_handler(
+    "update_group",
+    "Update an existing enrollment group. Only provided fields are changed.",
+    {
+        "type": "object",
+        "properties": {
+            "group_id": {"type": "string", "description": "The group ID to update"},
+            "name": {"type": "string"},
+            "enabled": {"type": "boolean"},
+            "policy_ids": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["group_id"],
+    },
+)
+def handle_update_group(group_id: str, name: Optional[str] = None, enabled: Optional[bool] = None, policy_ids: Optional[list] = None) -> str:
+    group = get_group(group_id)
+    if not group:
+        return json.dumps({"error": f"Group '{group_id}' not found."})
+    if name is not None:
+        group.name = name
+    if enabled is not None:
+        group.enabled = enabled
+    if policy_ids is not None:
+        group.policy_ids = [str(p) for p in policy_ids]
+    store_update_group_record(group)
+    return json.dumps({"updated": group_id})
+
+
+@_handler(
+    "delete_group",
+    "Delete an enrollment group. Enrolled users keep their API keys.",
+    {
+        "type": "object",
+        "properties": {
+            "group_id": {"type": "string", "description": "The group ID to delete"},
+        },
+        "required": ["group_id"],
+    },
+)
+def handle_delete_group(group_id: str) -> str:
+    try:
+        store_delete_group_record(group_id)
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+    return json.dumps({"deleted": group_id})
 
 
 # --- Register individual REST endpoints for each tool (must be after all @_handler definitions) ---
