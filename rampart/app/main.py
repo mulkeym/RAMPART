@@ -1,14 +1,21 @@
 from copy import deepcopy
+from hashlib import sha256
+from time import time
 from typing import Any, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from rampart.app.client_store import ClientRecord, client_context_from_record, record_token_usage, resolve_client_from_api_key
 from rampart.app.config import AppConfig, PolicyConfig, UpstreamConfig, get_config
 from rampart.app.models import EvaluationRequest, EvaluationResponse, HealthResponse
-from rampart.app.openai.proxy import openai_policy_error, proxy_chat_completion
+from rampart.app.openai.proxy import openai_policy_error, proxy_chat_completion, proxy_chat_completion_stream
+
+# Evaluation cache: hash(prompt + policy_ids) -> (EvaluationResponse, timestamp)
+_eval_cache: dict[str, tuple[EvaluationResponse, float]] = {}
+CACHE_TTL = 300  # 5 minutes
+CACHE_MAX_SIZE = 1000
 from rampart.app.policy.engine import PolicyEngine
 from rampart.app.tracking import ClientContext, write_evaluation_event
 from rampart.app.enrollment import router as enrollment_router
@@ -57,8 +64,17 @@ async def evaluate_chat_completions(payload: dict[str, Any], request: Request):
     config = get_config()
     client_record = _resolve_client_record(config, request)
     policies = _resolve_policies(config, client_record)
-    engine = PolicyEngine(config, policies)
-    response = await engine.evaluate(payload)
+    is_streaming = payload.get("stream", False)
+
+    # Check evaluation cache
+    cache_key = _eval_cache_key(payload, policies)
+    response = _get_cached_eval(cache_key)
+
+    if response is None:
+        engine = PolicyEngine(config, policies)
+        response = await engine.evaluate(payload)
+        _set_cached_eval(cache_key, response)
+
     _track_evaluation(config, request, response, client_record, policies)
     blocking_violations = _blocking_violations(response, policies)
     if blocking_violations:
@@ -71,6 +87,15 @@ async def evaluate_chat_completions(payload: dict[str, Any], request: Request):
     upstream = _effective_upstream(config, client_record)
     upstream_payload = response.sanitized_request if response.violations and response.sanitized_request else payload
     upstream_payload = _apply_model_override(upstream_payload, upstream.model)
+
+    # Streaming response — pass through SSE chunks directly
+    if is_streaming:
+        return StreamingResponse(
+            proxy_chat_completion_stream(upstream, upstream_payload),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     upstream_body, upstream_status = await proxy_chat_completion(upstream, upstream_payload)
     if client_record and isinstance(upstream_body, dict):
         usage = upstream_body.get("usage")
@@ -186,3 +211,30 @@ def _sanitize_llm_response(body: dict[str, Any]) -> dict[str, Any]:
         if isinstance(msg, dict):
             msg["content"] = "[Response blocked by RAMPART policy]"
     return sanitized
+
+
+def _eval_cache_key(payload: dict[str, Any], policies: list[PolicyConfig]) -> str:
+    import json
+    messages = payload.get("messages", [])
+    policy_ids = sorted(p.id for p in policies)
+    raw = json.dumps(messages, sort_keys=True) + "|" + ",".join(policy_ids)
+    return sha256(raw.encode()).hexdigest()
+
+
+def _get_cached_eval(key: str) -> Optional[EvaluationResponse]:
+    entry = _eval_cache.get(key)
+    if entry is None:
+        return None
+    response, ts = entry
+    if time() - ts > CACHE_TTL:
+        del _eval_cache[key]
+        return None
+    return response
+
+
+def _set_cached_eval(key: str, response: EvaluationResponse) -> None:
+    # Evict oldest entries if cache is full
+    if len(_eval_cache) >= CACHE_MAX_SIZE:
+        oldest = min(_eval_cache, key=lambda k: _eval_cache[k][1])
+        del _eval_cache[oldest]
+    _eval_cache[key] = (response, time())

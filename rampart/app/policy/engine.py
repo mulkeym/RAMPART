@@ -21,6 +21,19 @@ class PolicyEngine:
 
     async def evaluate(self, request: dict[str, Any]) -> EvaluationResponse:
         deterministic_violations, denied_tools = self._evaluate_deterministic(request)
+
+        # Fail fast: skip LLM/vision checks if deterministic checks already block
+        has_deterministic_block = any(_is_blocking(v, self.policies) for v in deterministic_violations)
+        if has_deterministic_block:
+            sanitized = None
+            if deterministic_violations and self.config.failure_response.include_sanitized_request:
+                sanitized = sanitize_request(request, denied_tools=denied_tools)
+            return EvaluationResponse(
+                decision="fail",
+                violations=deterministic_violations,
+                sanitized_request=sanitized,
+            )
+
         llm_violations, (vision_violations, vision_warnings) = await asyncio.gather(
             self.llm_evaluator.evaluate(request),
             self.vision_evaluator.evaluate(request),
