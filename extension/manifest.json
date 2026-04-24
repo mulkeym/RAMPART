@@ -9,13 +9,13 @@
         "service_worker": "background.js"
     },
     "content_scripts": [{
-        "matches": ["https://chatgpt.com/*"],
+        "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
         "js": ["bridge.js"],
         "run_at": "document_start"
     }],
     "web_accessible_resources": [{
         "resources": ["content.js", "styles.css"],
-        "matches": ["https://chatgpt.com/*"]
+        "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"]
     }],
     "action": {
         "default_popup": "popup.html",

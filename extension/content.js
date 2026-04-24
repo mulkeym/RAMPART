@@ -1,5 +1,6 @@
 (function() {
     'use strict';
+    console.log('[RAMPART] Content script loaded on', window.location.href);
 
     let requestId = 0;
     const pendingRequests = {};
@@ -105,6 +106,9 @@
     // Override fetch
     const originalFetch = window.fetch;
     window.fetch = async function(url, options) {
+        if (typeof url === 'string' && options && options.method === 'POST') {
+            console.log('[RAMPART] Intercepted POST to:', url);
+        }
         if (typeof url === 'string' && url.includes('/backend-api/conversation') && options && options.method === 'POST') {
             const settings = await sendToBridge('getSettings', {});
             if (settings && settings.enabled === false) {
