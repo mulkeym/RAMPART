@@ -208,6 +208,46 @@ async def violations_index(request: Request, customer: Optional[str] = None, cli
     return HTMLResponse(_page("RAMPART Violations", body, read_session_user(request)))
 
 
+@router.post("/ui/settings/test-llm", response_class=HTMLResponse)
+async def test_llm_connection(request: Request) -> HTMLResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    import httpx
+    import time
+    form = await _form_data(request)
+    base_url = form.get("base_url", "").strip()
+    model = form.get("model", "").strip()
+    api_key = form.get("api_key", "").strip()
+    if not base_url:
+        return HTMLResponse('<span style="color:var(--danger)">No base URL provided</span>')
+    payload = {
+        "model": model or "test",
+        "messages": [{"role": "user", "content": "Say OK"}],
+        "max_tokens": 10,
+        "temperature": 0,
+    }
+    headers = {"content-type": "application/json"}
+    if api_key:
+        headers["authorization"] = f"Bearer {api_key}"
+    start = time.time()
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(f"{base_url.rstrip('/')}/chat/completions", json=payload, headers=headers)
+        elapsed = int((time.time() - start) * 1000)
+        if resp.status_code >= 400:
+            return HTMLResponse(f'<span style="color:var(--danger)">HTTP {resp.status_code}: {escape(resp.text[:200])}</span>')
+        body = resp.json()
+        reply = ""
+        choices = body.get("choices", [])
+        if choices:
+            reply = (choices[0].get("message") or {}).get("content", "")
+        model_name = body.get("model", "")
+        return HTMLResponse(f'<span style="color:var(--success)">Connected ({elapsed}ms) &mdash; model: {escape(model_name)}, reply: {escape(reply[:100])}</span>')
+    except Exception as e:
+        return HTMLResponse(f'<span style="color:var(--danger)">Failed: {escape(str(e)[:200])}</span>')
+
+
 @router.get("/ui/settings", response_class=HTMLResponse)
 async def settings_page(request: Request, message: Optional[str] = None, error: Optional[str] = None) -> HTMLResponse:
     redirect = require_ui_user(request)
@@ -667,6 +707,10 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
           <label>Base URL<input name="llm_evaluator_base_url" value="{get_value("llm_evaluator_base_url", config.llm_evaluator.base_url)}" placeholder="{escape(config.llm_evaluator.base_url)}"></label>
           <label>Model<input name="llm_evaluator_model" value="{get_value("llm_evaluator_model", config.llm_evaluator.model)}" placeholder="{escape(config.llm_evaluator.model)}"></label>
           <label>Timeout Seconds<input name="llm_evaluator_timeout_seconds" value="{get_value("llm_evaluator_timeout_seconds", config.llm_evaluator.timeout_seconds)}" inputmode="decimal"></label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button type="button" class="button small" onclick="testLlm('llm_evaluator')">Test Connection</button>
+            <span id="test-result-llm_evaluator" class="muted" style="font-size:12px"></span>
+          </div>
         </fieldset>
         <fieldset class="fieldset">
           <legend>Vision Evaluator LLM</legend>
@@ -678,6 +722,10 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
           <label>Base URL<input name="vision_evaluator_base_url" value="{get_value("vision_evaluator_base_url", config.vision_evaluator.base_url)}" placeholder="{escape(config.vision_evaluator.base_url)}"></label>
           <label>Model<input name="vision_evaluator_model" value="{get_value("vision_evaluator_model", config.vision_evaluator.model)}" placeholder="{escape(config.vision_evaluator.model)}"></label>
           <label>Timeout Seconds<input name="vision_evaluator_timeout_seconds" value="{get_value("vision_evaluator_timeout_seconds", config.vision_evaluator.timeout_seconds)}" inputmode="decimal"></label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button type="button" class="button small" onclick="testLlm('vision_evaluator')">Test Connection</button>
+            <span id="test-result-vision_evaluator" class="muted" style="font-size:12px"></span>
+          </div>
         </fieldset>
         <fieldset class="fieldset">
           <legend>Default Pass-Through LLM</legend>
@@ -690,6 +738,10 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
           <label>Model<input name="upstream_model" value="{get_value("upstream_model", config.upstream.model)}" placeholder="{escape(config.upstream.model)}"></label>
           <label>API Key<input name="upstream_api_key" value="{get_value("upstream_api_key", config.upstream.api_key)}" autocomplete="off"></label>
           <label>Timeout Seconds<input name="upstream_timeout_seconds" value="{get_value("upstream_timeout_seconds", config.upstream.timeout_seconds)}" inputmode="decimal"></label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button type="button" class="button small" onclick="testLlm('upstream')">Test Connection</button>
+            <span id="test-result-upstream" class="muted" style="font-size:12px"></span>
+          </div>
         </fieldset>
         <fieldset class="fieldset">
           <legend>MCP Server</legend>
@@ -1073,6 +1125,25 @@ document.querySelectorAll('table.sortable thead th[data-sort]').forEach(function
     rows.forEach(function(r){tbody.appendChild(r);});
   });
 });
+function testLlm(prefix){
+  var urlField=document.querySelector('input[name='+prefix+'_base_url]');
+  var modelField=document.querySelector('input[name='+prefix+'_model]');
+  var keyField=document.querySelector('input[name='+prefix+'_api_key]');
+  var result=document.getElementById('test-result-'+prefix);
+  var url=(urlField?urlField.value||urlField.placeholder:'').trim();
+  var model=(modelField?modelField.value||modelField.placeholder:'').trim();
+  var apiKey=keyField?keyField.value.trim():'';
+  if(!url){result.innerHTML='<span style="color:var(--danger)">No base URL</span>';return;}
+  result.innerHTML='<span style="color:var(--muted)">Testing...</span>';
+  var data=new URLSearchParams();
+  data.append('base_url',url);
+  data.append('model',model);
+  if(apiKey)data.append('api_key',apiKey);
+  fetch('/ui/settings/test-llm',{method:'POST',body:data,headers:{'Content-Type':'application/x-www-form-urlencoded'}})
+    .then(function(r){return r.text();})
+    .then(function(html){result.innerHTML=html;})
+    .catch(function(e){result.innerHTML='<span style="color:var(--danger)">'+e.message+'</span>';});
+}
 </script>"""
 
 
