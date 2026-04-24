@@ -248,6 +248,36 @@ async def test_llm_connection(request: Request) -> HTMLResponse:
         return HTMLResponse(f'<span style="color:var(--danger)">Failed: {escape(str(e)[:200])}</span>')
 
 
+@router.post("/ui/settings/list-models", response_class=HTMLResponse)
+async def list_models(request: Request) -> HTMLResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    import httpx
+    form = await _form_data(request)
+    base_url = form.get("base_url", "").strip()
+    api_key = form.get("api_key", "").strip()
+    if not base_url:
+        return HTMLResponse("[]")
+    headers = {}
+    if api_key:
+        headers["authorization"] = f"Bearer {api_key}"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"{base_url.rstrip('/')}/models", headers=headers)
+        if resp.status_code >= 400:
+            return HTMLResponse("[]")
+        body = resp.json()
+        models = []
+        for m in body.get("data", []):
+            if isinstance(m, dict) and m.get("id"):
+                models.append(m["id"])
+        import json
+        return HTMLResponse(json.dumps(sorted(models)))
+    except Exception:
+        return HTMLResponse("[]")
+
+
 @router.get("/ui/settings", response_class=HTMLResponse)
 async def settings_page(request: Request, message: Optional[str] = None, error: Optional[str] = None) -> HTMLResponse:
     redirect = require_ui_user(request)
@@ -710,7 +740,13 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
             <div class="hint" style="margin-top:4px">When disabled, all LLM-based policy checks are skipped. Only deterministic checks (regex, tool allowlist, size) will run.</div>
           </div>
           <label>Base URL<input name="llm_evaluator_base_url" value="{get_value("llm_evaluator_base_url", config.llm_evaluator.base_url)}" placeholder="{escape(config.llm_evaluator.base_url)}"></label>
-          <label>Model<input name="llm_evaluator_model" value="{get_value("llm_evaluator_model", config.llm_evaluator.model)}" placeholder="{escape(config.llm_evaluator.model)}"></label>
+          <label>Model
+            <div style="display:flex;gap:8px">
+              <input name="llm_evaluator_model" value="{get_value("llm_evaluator_model", config.llm_evaluator.model)}" placeholder="{escape(config.llm_evaluator.model)}" list="models-llm_evaluator" style="flex:1">
+              <button type="button" class="button small" onclick="fetchModels('llm_evaluator')">Fetch Models</button>
+            </div>
+            <datalist id="models-llm_evaluator"></datalist>
+          </label>
           <label>Timeout Seconds<input name="llm_evaluator_timeout_seconds" value="{get_value("llm_evaluator_timeout_seconds", config.llm_evaluator.timeout_seconds)}" inputmode="decimal"></label>
           <div style="display:flex;gap:8px;align-items:center">
             <button type="button" class="button small" onclick="testLlm('llm_evaluator')">Test Connection</button>
@@ -725,7 +761,13 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
             <div class="hint" style="margin-top:4px">When enabled, images in requests are evaluated against LLM policies using this vision model.</div>
           </div>
           <label>Base URL<input name="vision_evaluator_base_url" value="{get_value("vision_evaluator_base_url", config.vision_evaluator.base_url)}" placeholder="{escape(config.vision_evaluator.base_url)}"></label>
-          <label>Model<input name="vision_evaluator_model" value="{get_value("vision_evaluator_model", config.vision_evaluator.model)}" placeholder="{escape(config.vision_evaluator.model)}"></label>
+          <label>Model
+            <div style="display:flex;gap:8px">
+              <input name="vision_evaluator_model" value="{get_value("vision_evaluator_model", config.vision_evaluator.model)}" placeholder="{escape(config.vision_evaluator.model)}" list="models-vision_evaluator" style="flex:1">
+              <button type="button" class="button small" onclick="fetchModels('vision_evaluator')">Fetch Models</button>
+            </div>
+            <datalist id="models-vision_evaluator"></datalist>
+          </label>
           <label>Timeout Seconds<input name="vision_evaluator_timeout_seconds" value="{get_value("vision_evaluator_timeout_seconds", config.vision_evaluator.timeout_seconds)}" inputmode="decimal"></label>
           <div style="display:flex;gap:8px;align-items:center">
             <button type="button" class="button small" onclick="testLlm('vision_evaluator')">Test Connection</button>
@@ -740,7 +782,13 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
             <div class="hint" style="margin-top:4px">When disabled, requests are evaluated but not forwarded to any upstream LLM. Anonymous users cannot use the LLM.</div>
           </div>
           <label>Base URL<input name="upstream_base_url" value="{get_value("upstream_base_url", config.upstream.base_url)}" placeholder="{escape(config.upstream.base_url)}"></label>
-          <label>Model<input name="upstream_model" value="{get_value("upstream_model", config.upstream.model)}" placeholder="{escape(config.upstream.model)}"></label>
+          <label>Model
+            <div style="display:flex;gap:8px">
+              <input name="upstream_model" value="{get_value("upstream_model", config.upstream.model)}" placeholder="{escape(config.upstream.model)}" list="models-upstream" style="flex:1">
+              <button type="button" class="button small" onclick="fetchModels('upstream')">Fetch Models</button>
+            </div>
+            <datalist id="models-upstream"></datalist>
+          </label>
           <label>API Key<input name="upstream_api_key" value="{get_value("upstream_api_key", config.upstream.api_key)}" autocomplete="off"></label>
           <label>Timeout Seconds<input name="upstream_timeout_seconds" value="{get_value("upstream_timeout_seconds", config.upstream.timeout_seconds)}" inputmode="decimal"></label>
           <div style="display:flex;gap:8px;align-items:center">
@@ -1130,6 +1178,27 @@ document.querySelectorAll('table.sortable thead th[data-sort]').forEach(function
     rows.forEach(function(r){tbody.appendChild(r);});
   });
 });
+function fetchModels(prefix){
+  var urlField=document.querySelector('input[name='+prefix+'_base_url]');
+  var keyField=document.querySelector('input[name='+prefix+'_api_key]');
+  var modelField=document.querySelector('input[name='+prefix+'_model]');
+  var datalist=document.getElementById('models-'+prefix);
+  var url=(urlField?urlField.value||urlField.placeholder:'').trim();
+  var apiKey=keyField?keyField.value.trim():'';
+  if(!url||!datalist){return;}
+  datalist.innerHTML='';
+  var data=new URLSearchParams();
+  data.append('base_url',url);
+  if(apiKey)data.append('api_key',apiKey);
+  fetch('/ui/settings/list-models',{method:'POST',body:data,headers:{'Content-Type':'application/x-www-form-urlencoded'}})
+    .then(function(r){return r.json();})
+    .then(function(models){
+      datalist.innerHTML='';
+      models.forEach(function(m){var o=document.createElement('option');o.value=m;datalist.appendChild(o);});
+      if(models.length>0&&modelField){modelField.focus();modelField.click();}
+    })
+    .catch(function(){});
+}
 function testLlm(prefix){
   var urlField=document.querySelector('input[name='+prefix+'_base_url]');
   var modelField=document.querySelector('input[name='+prefix+'_model]');
