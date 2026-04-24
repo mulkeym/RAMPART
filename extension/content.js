@@ -164,7 +164,7 @@
     // Override fetch
     const originalFetch = window.fetch;
     window.fetch = async function(url, options) {
-        if (typeof url === 'string' && (url.includes('/backend-api/conversation') || url.includes('/backend-api/f/conversation')) && options && options.method === 'POST') {
+        if (typeof url === 'string' && (url.includes('/backend-api/conversation') || url.includes('/backend-api/f/conversation') || url.includes('/backend-anon/conversation') || url.includes('/backend-anon/f/conversation')) && options && options.method === 'POST') {
             console.log('[RAMPART] Conversation request detected:', url);
             const settings = await sendToBridge('getSettings', {});
             if (settings && settings.enabled === false) {
