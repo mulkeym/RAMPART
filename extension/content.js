@@ -109,7 +109,8 @@
         if (typeof url === 'string' && options && options.method === 'POST') {
             console.log('[RAMPART] Intercepted POST to:', url);
         }
-        if (typeof url === 'string' && url.includes('/backend-api/conversation') && options && options.method === 'POST') {
+        if (typeof url === 'string' && (url.includes('/backend-api/conversation') || url.includes('/backend-api/f/conversation')) && options && options.method === 'POST') {
+            console.log('[RAMPART] Conversation request detected:', url);
             const settings = await sendToBridge('getSettings', {});
             if (settings && settings.enabled === false) {
                 return originalFetch.call(this, url, options);
