@@ -304,6 +304,9 @@ async def update_settings(request: Request) -> HTMLResponse:
             llm_evaluator_base_url=form.get("llm_evaluator_base_url", "").strip(),
             llm_evaluator_model=form.get("llm_evaluator_model", "").strip(),
             llm_evaluator_timeout_seconds=_optional_float(form.get("llm_evaluator_timeout_seconds", "")),
+            llm_evaluator_mode=form.get("llm_evaluator_mode", "").strip(),
+            llm_evaluator_confidence_threshold=_optional_float(form.get("llm_evaluator_confidence_threshold", "")),
+            llm_evaluator_post_llm_enabled=form.get("llm_evaluator_post_llm_enabled") == "on",
             vision_evaluator_enabled=form.get("vision_evaluator_enabled") == "on",
             vision_evaluator_base_url=form.get("vision_evaluator_base_url", "").strip(),
             vision_evaluator_model=form.get("vision_evaluator_model", "").strip(),
@@ -738,6 +741,19 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
           <div>
             <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;color:var(--text-secondary)">Enabled <input type="checkbox" name="llm_evaluator_enabled" {"checked" if config.llm_evaluator.enabled else ""} style="width:auto"></label>
             <div class="hint" style="margin-top:4px">When disabled, all LLM-based policy checks are skipped. Only deterministic checks (regex, tool allowlist, size) will run.</div>
+          </div>
+          <label>Mode
+            <select name="llm_evaluator_mode">
+              <option value="standard" {"selected" if config.llm_evaluator.mode == "standard" else ""}>Standard (JSON prompt/response)</option>
+              <option value="granite-guardian" {"selected" if config.llm_evaluator.mode == "granite-guardian" else ""}>Granite Guardian (logprobs)</option>
+            </select>
+          </label>
+          <label>Confidence Threshold<input name="llm_evaluator_confidence_threshold" value="{get_value("llm_evaluator_confidence_threshold", config.llm_evaluator.confidence_threshold)}" placeholder="0.75" inputmode="decimal">
+            <div class="hint">For Granite Guardian mode: probability threshold for violation detection (0.0-1.0). Higher = fewer false positives.</div>
+          </label>
+          <div>
+            <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;color:var(--text-secondary)">Post-LLM Evaluation <input type="checkbox" name="llm_evaluator_post_llm_enabled" {"checked" if config.llm_evaluator.post_llm_enabled else ""} style="width:auto"></label>
+            <div class="hint" style="margin-top:4px">When enabled, the upstream LLM response is also evaluated against policies. Harmful content is sanitized before reaching the client.</div>
           </div>
           <label>Base URL<input name="llm_evaluator_base_url" value="{get_value("llm_evaluator_base_url", config.llm_evaluator.base_url)}" placeholder="{escape(config.llm_evaluator.base_url)}"></label>
           <label>Model
