@@ -14,6 +14,9 @@ class LlmEvaluatorConfig(BaseModel):
     model: str = "gemma4-e2b"
     timeout_seconds: float = 20.0
     fail_closed_on_error: bool = True
+    mode: str = "standard"
+    confidence_threshold: float = 0.75
+    post_llm_enabled: bool = False
 
 
 class VisionEvaluatorConfig(BaseModel):
@@ -74,6 +77,7 @@ class CheckConfig(BaseModel):
     allowed_models: Optional[list[str]] = None
     max_chars: Optional[int] = None
     skip_vision: Optional[bool] = None
+    stage: Optional[str] = None
 
 
 class PolicyConfig(BaseModel):
@@ -177,6 +181,12 @@ def _apply_local_settings(config: AppConfig) -> None:
         config.llm_evaluator.model = settings.llm_evaluator_model
     if settings.llm_evaluator_timeout_seconds is not None:
         config.llm_evaluator.timeout_seconds = settings.llm_evaluator_timeout_seconds
+    if settings.llm_evaluator_mode:
+        config.llm_evaluator.mode = settings.llm_evaluator_mode
+    if settings.llm_evaluator_confidence_threshold is not None:
+        config.llm_evaluator.confidence_threshold = settings.llm_evaluator_confidence_threshold
+    if settings.llm_evaluator_post_llm_enabled is not None:
+        config.llm_evaluator.post_llm_enabled = settings.llm_evaluator_post_llm_enabled
     if settings.upstream_enabled is not None:
         config.upstream.enabled = settings.upstream_enabled
     if settings.upstream_base_url:

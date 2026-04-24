@@ -12,6 +12,9 @@ class RuntimeSettings(BaseModel):
     llm_evaluator_base_url: str = ""
     llm_evaluator_model: str = ""
     llm_evaluator_timeout_seconds: Optional[float] = None
+    llm_evaluator_mode: str = ""
+    llm_evaluator_confidence_threshold: Optional[float] = None
+    llm_evaluator_post_llm_enabled: Optional[bool] = None
     vision_evaluator_enabled: Optional[bool] = None
     vision_evaluator_base_url: str = ""
     vision_evaluator_model: str = ""
