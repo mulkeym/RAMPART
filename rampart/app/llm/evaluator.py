@@ -115,12 +115,10 @@ class LlmEvaluator:
         if not user_text.strip():
             return []
 
-        results = await asyncio.gather(*(
-            self._evaluate_guardian_check(user_text, policy, check)
-            for policy, check in checks
-        ))
+        # Run sequentially to avoid model context contamination on single-instance LLM servers
         violations: list[Violation] = []
-        for result in results:
+        for policy, check in checks:
+            result = await self._evaluate_guardian_check(user_text, policy, check)
             violations.extend(result)
         return violations
 
