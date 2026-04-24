@@ -43,9 +43,23 @@
             }
         } catch (e) {}
 
-        // Ask Sage / generic formats
-        // Try: body.message (string)
-        if (typeof body.message === 'string' && body.message.trim()) return body.message;
+        // Ask Sage format: message field is JSON array of conversation history
+        if (typeof body.message === 'string' && body.message.trim()) {
+            try {
+                const parsed = JSON.parse(body.message);
+                if (Array.isArray(parsed)) {
+                    // Find the last user message ("me")
+                    for (let i = parsed.length - 1; i >= 0; i--) {
+                        if (parsed[i].user === 'me' && parsed[i].message) {
+                            console.log('[RAMPART] Ask Sage user message:', parsed[i].message.substring(0, 100));
+                            return parsed[i].message;
+                        }
+                    }
+                }
+            } catch (e) {}
+            // Not JSON array — use as-is
+            return body.message;
+        }
         // Try: body.prompt (string)
         if (typeof body.prompt === 'string' && body.prompt.trim()) return body.prompt;
         // Try: body.query (string)
