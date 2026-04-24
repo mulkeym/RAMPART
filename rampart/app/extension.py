@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 
 from rampart.app.security.auth import read_session_user, require_ui_user
 from rampart.app.security.audit import audit_event
@@ -79,4 +79,31 @@ async def download_extension(request: Request):
         buf,
         media_type="application/zip",
         headers={"Content-Disposition": "attachment; filename=rampart-extension.zip"},
+    )
+
+
+LIVE_CONTENT_TYPES = {
+    ".js": "application/javascript",
+    ".css": "text/css",
+}
+
+LIVE_ALLOWED_FILES = {"content.js", "styles.css"}
+
+
+@router.get("/ui/extension/live/{filename}")
+async def serve_live_file(filename: str):
+    """Serve extension files for auto-updating. No auth required."""
+    if filename not in LIVE_ALLOWED_FILES:
+        return Response("Not found", status_code=404)
+    file_path = EXTENSION_DIR / filename
+    if not file_path.exists():
+        return Response("Not found", status_code=404)
+    content_type = LIVE_CONTENT_TYPES.get(file_path.suffix, "application/octet-stream")
+    return Response(
+        file_path.read_bytes(),
+        media_type=content_type,
+        headers={
+            "Cache-Control": "no-cache, must-revalidate",
+            "Access-Control-Allow-Origin": "*",
+        },
     )
