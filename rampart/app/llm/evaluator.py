@@ -144,7 +144,7 @@ class LlmEvaluator:
             ],
             "logprobs": True,
             "top_logprobs": 5,
-            "max_tokens": 5,
+            "max_tokens": 100,
             "temperature": 0,
         }
 
@@ -157,9 +157,11 @@ class LlmEvaluator:
                 response.raise_for_status()
 
             body = response.json()
-            violates, confidence, raw_output = _parse_guardian_response(body, llm_config.confidence_threshold)
             import sys
-            print(f"[GUARDIAN] policy={policy.id} | violates={violates} | confidence={confidence:.3f} | output={raw_output[:100]}", file=sys.stderr, flush=True)
+            raw_content = (body.get("choices", [{}])[0].get("message") or {}).get("content", "")
+            print(f"[GUARDIAN RAW] policy={policy.id} | content={repr(raw_content[:300])}", file=sys.stderr, flush=True)
+            violates, confidence, raw_output = _parse_guardian_response(body, llm_config.confidence_threshold)
+            print(f"[GUARDIAN] policy={policy.id} | violates={violates} | confidence={confidence:.3f} | parsed={raw_output[:100]}", file=sys.stderr, flush=True)
         except (httpx.HTTPError, KeyError, IndexError, TypeError) as error:
             if not llm_config.fail_closed_on_error:
                 return []
@@ -204,10 +206,27 @@ def _parse_guardian_response(body: dict, threshold: float) -> tuple[bool, float,
 
     choice = choices[0]
     content = (choice.get("message") or {}).get("content", "").strip()
-    # Strip <think>...</think> blocks if present
+    # Strip <think>...</think> blocks and <score>...</score> wrapper if present
     content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
-
     logprobs_data = choice.get("logprobs")
+    score_match = re.search(r"<score>\s*(yes|no)\s*</score>", content, re.IGNORECASE)
+    if score_match:
+        answer = score_match.group(1).strip().lower()
+        # Still try logprobs for confidence, but we have the answer from the tag
+        yes_prob = 1.0 if answer == "yes" else 0.0
+        if logprobs_data and isinstance(logprobs_data, dict):
+            for token_entry in (logprobs_data.get("content") or []):
+                if not isinstance(token_entry, dict):
+                    continue
+                for entry in token_entry.get("top_logprobs", []):
+                    t = entry.get("token", "").strip().lower()
+                    if t == "yes":
+                        yes_prob = math.exp(entry.get("logprob", -100))
+                        break
+                if yes_prob not in (0.0, 1.0):
+                    break
+        violates = answer == "yes" and yes_prob > threshold
+        return violates, yes_prob, answer
     if logprobs_data and isinstance(logprobs_data, dict):
         token_logprobs = logprobs_data.get("content", [])
         # Skip past any <think> tokens to find the actual Yes/No token
