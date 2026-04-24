@@ -37,6 +37,10 @@ class PolicyEngine:
             warnings=vision_warnings,
         )
 
+    async def post_evaluate(self, response_text: str) -> list[Violation]:
+        """Evaluate an upstream LLM response against post-stage policies."""
+        return await self.llm_evaluator.evaluate_response(response_text)
+
     def _evaluate_deterministic(self, request: dict[str, Any]) -> tuple[list[Violation], set[str]]:
         violations: list[Violation] = []
         denied_tools: set[str] = set()
