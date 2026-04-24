@@ -1010,11 +1010,38 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
     return _page("RAMPART Settings", body, actor)
 
 
+def _client_policy_section(client, is_group_member: bool, policy_checkboxes: str) -> str:
+    if not is_group_member:
+        return f"""
+        <fieldset class="fieldset">
+          <legend>Applied Policies</legend>
+          <div class="hint">If no policies are selected, all enabled policies apply.</div>
+          {policy_checkboxes}
+        </fieldset>"""
+    group = get_group(client.group_id) if client else None
+    group_name = group.name if group else client.group_id
+    group_policies = group.policy_ids if group else []
+    policy_list = ", ".join(f"<code>{escape(p)}</code>" for p in group_policies) if group_policies else "<span class='muted'>all enabled policies</span>"
+    return f"""
+        <fieldset class="fieldset">
+          <legend>Group Membership</legend>
+          <div style="margin-bottom:8px">
+            <span class="muted" style="font-size:12px">Member of group</span>
+            <a href="/ui/groups/{escape(client.group_id)}" style="color:var(--primary);font-weight:600"> {escape(group_name)}</a>
+          </div>
+          <div style="font-size:12px;color:var(--text-secondary)">
+            <span class="muted">Inherited policies:</span> {policy_list}
+          </div>
+          <div class="hint" style="margin-top:8px">Policies are managed on the <a href="/ui/groups/{escape(client.group_id)}" style="color:var(--primary)">group page</a>. Changes apply to all group members.</div>
+        </fieldset>"""
+
+
 def _client_form(client: Optional[ClientRecord], title: str, action_url: str, error: Optional[str] = None, actor: Optional[str] = None, form: Optional[dict[str, str]] = None) -> str:
     form = form or {}
     get_value = lambda field, default="": escape(_string_value(form.get(field, getattr(client, field, default) if client else default)))
     enabled = "checked" if (client.enabled if client else True) else ""
     readonly_id = "readonly" if client else ""
+    is_group_member = client and client.group_id
     selected_policy_ids = _selected_policy_ids(form) if form else (client.policy_ids if client else [])
     policy_checkboxes = _policy_assignment_checkboxes(selected_policy_ids)
     body = f"""
@@ -1043,11 +1070,7 @@ def _client_form(client: Optional[ClientRecord], title: str, action_url: str, er
           <label>Timeout Seconds<input name="upstream_timeout_seconds" value="{get_value("upstream_timeout_seconds")}" inputmode="decimal"></label>
         </fieldset>
         <label class="checkbox"><input type="checkbox" name="enabled" {enabled}> Enabled</label>
-        <fieldset class="fieldset">
-          <legend>Applied Policies</legend>
-          <div class="hint">If no policies are selected, all enabled policies apply.</div>
-          {policy_checkboxes}
-        </fieldset>
+        {_client_policy_section(client, is_group_member, policy_checkboxes)}
         <label>Notes<textarea name="notes" rows="4">{get_value("notes")}</textarea></label>
         <div class="actions"><button class="button primary" type="submit">Save</button></div>
       </form>
