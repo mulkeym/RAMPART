@@ -305,6 +305,7 @@ async def update_settings(request: Request) -> HTMLResponse:
     form = await _form_data(request)
     try:
         settings = RuntimeSettings(
+            tls_verify=form.get("tls_verify") == "on",
             llm_evaluator_enabled=form.get("llm_evaluator_enabled") == "on",
             llm_evaluator_base_url=form.get("llm_evaluator_base_url", "").strip(),
             llm_evaluator_model=form.get("llm_evaluator_model", "").strip(),
@@ -904,6 +905,10 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
       </section>
       {_notice(message, error)}
       <form class="panel form" method="post" action="/ui/settings">
+        <div>
+          <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;color:var(--text-secondary)">TLS Certificate Verification <input type="checkbox" name="tls_verify" {"checked" if (settings.tls_verify is not False) else ""} style="width:auto"></label>
+          <div class="hint" style="margin-top:4px">Uncheck to disable TLS certificate verification for all outgoing connections. Required for self-signed certificates.</div>
+        </div>
         <fieldset class="fieldset">
           <legend>Context Analysis LLM</legend>
           <div class="hint">Used for context-aware policy evaluation.</div>

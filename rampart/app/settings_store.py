@@ -22,6 +22,7 @@ class RuntimeSettings(BaseModel):
     mcp_enabled: Optional[bool] = None
     mcp_admin_key: str = ""
     mcp_admin_write: Optional[bool] = None
+    tls_verify: Optional[bool] = None
     upstream_enabled: Optional[bool] = None
     upstream_base_url: str = ""
     upstream_model: str = ""
