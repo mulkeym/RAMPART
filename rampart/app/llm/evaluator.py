@@ -30,10 +30,14 @@ class LlmEvaluator:
         if not policies_with_llm_checks:
             return []
 
+        import asyncio
         request_json = json.dumps(_strip_image_data(request), sort_keys=True, ensure_ascii=True)
+        results = await asyncio.gather(*(
+            self._evaluate_policy_check(request_json, policy, check)
+            for policy, check in policies_with_llm_checks
+        ))
         violations: list[Violation] = []
-        for policy, check in policies_with_llm_checks:
-            result = await self._evaluate_policy_check(request_json, policy, check)
+        for result in results:
             violations.extend(result)
         return violations
 
