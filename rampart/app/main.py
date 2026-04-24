@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from rampart.app.client_store import ClientRecord, client_context_from_record, record_token_usage, resolve_client_from_api_key
+from rampart.app.client_store import ClientRecord, client_context_from_record, record_evaluation, record_token_usage, resolve_client_from_api_key
 from rampart.app.config import AppConfig, PolicyConfig, UpstreamConfig, get_config
 from rampart.app.models import EvaluationRequest, EvaluationResponse, HealthResponse
 from rampart.app.openai.proxy import openai_policy_error, proxy_chat_completion, proxy_chat_completion_stream
@@ -56,6 +56,8 @@ async def evaluate(payload: EvaluationRequest, request: Request) -> EvaluationRe
     engine = PolicyEngine(config, policies)
     response = await engine.evaluate(payload.request)
     _track_evaluation(config, request, response, client_record, policies)
+    if client_record:
+        record_evaluation(client_record.id, len(response.violations), config.clients.path)
     return response
 
 
@@ -76,6 +78,8 @@ async def evaluate_chat_completions(payload: dict[str, Any], request: Request):
         _set_cached_eval(cache_key, response)
 
     _track_evaluation(config, request, response, client_record, policies)
+    if client_record:
+        record_evaluation(client_record.id, len(response.violations), config.clients.path)
     blocking_violations = _blocking_violations(response, policies)
     if blocking_violations:
         return JSONResponse(

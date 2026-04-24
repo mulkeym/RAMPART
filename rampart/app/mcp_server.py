@@ -460,6 +460,8 @@ def handle_list_clients() -> str:
             "total_completion_tokens": c.total_completion_tokens,
             "total_tokens": c.total_prompt_tokens + c.total_completion_tokens,
             "total_requests": c.total_requests,
+            "total_evaluations": c.total_evaluations,
+            "total_violations": c.total_violations,
         }
         for c in clients
     ]
@@ -499,6 +501,8 @@ def handle_get_client(client_id: str) -> str:
         "total_completion_tokens": client.total_completion_tokens,
         "total_tokens": client.total_prompt_tokens + client.total_completion_tokens,
         "total_requests": client.total_requests,
+        "total_evaluations": client.total_evaluations,
+        "total_violations": client.total_violations,
     }, indent=2)
 
 

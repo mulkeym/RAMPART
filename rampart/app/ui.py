@@ -813,7 +813,7 @@ def _client_row(client: ClientRecord) -> str:
         <td>{escape(client.app_name)}<div class="muted">{escape(client.environment)}</div></td>
         <td>{escape(owner)}</td>
         <td><span class="pill {status}">{status}</span></td>
-        <td><span style="font-size:12px">{_format_tokens(client.total_prompt_tokens + client.total_completion_tokens)}</span><div class="muted" style="font-size:10px">{client.total_requests} req &middot; {_format_tokens(client.total_prompt_tokens)} in &middot; {_format_tokens(client.total_completion_tokens)} out</div></td>
+        <td><span style="font-size:12px">{_format_tokens(client.total_prompt_tokens + client.total_completion_tokens)}</span><div class="muted" style="font-size:10px">{client.total_requests} proxy &middot; {_format_tokens(client.total_prompt_tokens)} in &middot; {_format_tokens(client.total_completion_tokens)} out</div><div class="muted" style="font-size:10px">{client.total_evaluations} evals &middot; <span style="color:{'var(--danger)' if client.total_violations > 0 else 'var(--muted)'}">{client.total_violations} violations</span></div></td>
         <td><code>{escape(client.last_used_at or "")}</code></td>
         <td class="row-actions">
           <a class="button small" href="/ui/clients/{escape(client.id)}">Edit</a>
