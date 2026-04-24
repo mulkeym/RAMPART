@@ -172,8 +172,10 @@
     const pastedImages = [];
 
     document.addEventListener('paste', function(e) {
+        console.log('[RAMPART] Paste event detected, items:', e.clipboardData ? e.clipboardData.items.length : 0);
         if (!e.clipboardData || !e.clipboardData.items) return;
         for (const item of e.clipboardData.items) {
+            console.log('[RAMPART] Paste item type:', item.type);
             if (item.type.indexOf('image') === 0) {
                 const file = item.getAsFile();
                 if (!file) continue;
@@ -234,8 +236,27 @@
                 let rawBody = options.body;
                 if (rawBody instanceof FormData) {
                     body = {};
+                    const formImagePromises = [];
                     for (const [key, value] of rawBody.entries()) {
-                        if (typeof value === 'string') body[key] = value;
+                        if (typeof value === 'string') {
+                            body[key] = value;
+                        } else if (value instanceof File) {
+                            console.log('[RAMPART] FormData file:', key, '| type:', value.type, '| size:', Math.round(value.size/1024) + 'KB');
+                            if (value.type.startsWith('image/')) {
+                                formImagePromises.push(new Promise((resolve) => {
+                                    const reader = new FileReader();
+                                    reader.onload = function(ev) {
+                                        pastedImages.push(ev.target.result);
+                                        console.log('[RAMPART] Cached image from FormData (' + Math.round(value.size/1024) + 'KB)');
+                                        resolve();
+                                    };
+                                    reader.readAsDataURL(value);
+                                }));
+                            }
+                        }
+                    }
+                    if (formImagePromises.length > 0) {
+                        await Promise.all(formImagePromises);
                     }
                     console.log('[RAMPART] Parsed FormData keys:', Object.keys(body).join(', '));
                 } else if (typeof rawBody === 'string') {
@@ -246,11 +267,11 @@
                 const prompt = extractPrompt(body);
                 const imageAssets = extractImageAssets(body);
 
-                // Use pasted/dropped images if we have them and the message contains image assets
+                // Include any captured images (from paste, drop, or FormData)
                 const images = [];
-                if (imageAssets.length > 0 && pastedImages.length > 0) {
+                if (pastedImages.length > 0) {
                     images.push(...pastedImages);
-                    console.log('[RAMPART] Including', images.length, 'pasted/dropped image(s) for evaluation');
+                    console.log('[RAMPART] Including', images.length, 'image(s) for evaluation');
                 }
 
                 if (prompt || images.length > 0) {
