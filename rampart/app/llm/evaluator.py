@@ -15,7 +15,7 @@ class LlmEvaluator:
         self.config = config
         self.policies = policies if policies is not None else config.policies
 
-    async def evaluate(self, request: dict[str, Any]) -> list[Violation]:
+    async def evaluate(self, request: dict[str, Any], stage: str = "pre") -> list[Violation]:
         llm_config = self.config.llm_evaluator
         if not llm_config.enabled:
             return []
@@ -25,23 +25,35 @@ class LlmEvaluator:
             for policy in self.policies
             if policy.enabled
             for check in policy.checks
-            if check.type == "llm"
+            if check.type == "llm" and _check_matches_stage(check, stage)
         ]
         if not policies_with_llm_checks:
             return []
 
+        if llm_config.mode == "granite-guardian":
+            return await self._evaluate_guardian(request, policies_with_llm_checks)
+        return await self._evaluate_standard(request, policies_with_llm_checks)
+
+    async def evaluate_response(self, response_text: str) -> list[Violation]:
+        """Evaluate an LLM response against post-stage policies."""
+        if not self.config.llm_evaluator.post_llm_enabled:
+            return []
+        request = {"messages": [{"role": "assistant", "content": response_text}]}
+        return await self.evaluate(request, stage="post")
+
+    async def _evaluate_standard(self, request: dict[str, Any], checks: list) -> list[Violation]:
         import asyncio
         request_json = json.dumps(_strip_image_data(request), sort_keys=True, ensure_ascii=True)
         results = await asyncio.gather(*(
-            self._evaluate_policy_check(request_json, policy, check)
-            for policy, check in policies_with_llm_checks
+            self._evaluate_standard_check(request_json, policy, check)
+            for policy, check in checks
         ))
         violations: list[Violation] = []
         for result in results:
             violations.extend(result)
         return violations
 
-    async def _evaluate_policy_check(self, request_json: str, policy: PolicyConfig, check: CheckConfig) -> list[Violation]:
+    async def _evaluate_standard_check(self, request_json: str, policy: PolicyConfig, check: CheckConfig) -> list[Violation]:
         llm_config = self.config.llm_evaluator
         prompt = build_policy_check_prompt(request_json, policy, check)
         payload = {
@@ -87,6 +99,119 @@ class LlmEvaluator:
                 source="llm",
             )
         ]
+
+    async def _evaluate_guardian(self, request: dict[str, Any], checks: list) -> list[Violation]:
+        import asyncio
+        text_parts = []
+        for message in request.get("messages") or []:
+            content = message.get("content")
+            if isinstance(content, str):
+                text_parts.append(content)
+            elif isinstance(content, list):
+                for part in content:
+                    if isinstance(part, dict) and isinstance(part.get("text"), str):
+                        text_parts.append(part["text"])
+        user_text = "\n".join(text_parts)
+        if not user_text.strip():
+            return []
+
+        results = await asyncio.gather(*(
+            self._evaluate_guardian_check(user_text, policy, check)
+            for policy, check in checks
+        ))
+        violations: list[Violation] = []
+        for result in results:
+            violations.extend(result)
+        return violations
+
+    async def _evaluate_guardian_check(self, text: str, policy: PolicyConfig, check: CheckConfig) -> list[Violation]:
+        llm_config = self.config.llm_evaluator
+        risk_definition = check.instruction or policy.description
+        payload = {
+            "model": llm_config.model,
+            "messages": [
+                {"role": "user", "content": text},
+            ],
+            "chat_template_kwargs": {
+                "guardian_config": {
+                    "risk_name": policy.id,
+                    "risk_definition": risk_definition,
+                }
+            },
+            "logprobs": True,
+            "top_logprobs": 5,
+            "max_tokens": 20,
+            "temperature": 0,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=llm_config.timeout_seconds) as client:
+                response = await client.post(
+                    f"{llm_config.base_url.rstrip('/')}/chat/completions",
+                    json=payload,
+                )
+                response.raise_for_status()
+
+            body = response.json()
+            violates, confidence, raw_output = _parse_guardian_response(body, llm_config.confidence_threshold)
+        except (httpx.HTTPError, KeyError, IndexError, TypeError) as error:
+            if not llm_config.fail_closed_on_error:
+                return []
+            return [
+                Violation(
+                    policy_id="llm-evaluator-unavailable",
+                    severity="critical",
+                    category="evaluator_error",
+                    message=f"Granite Guardian failed: {error.__class__.__name__}",
+                    source="llm",
+                )
+            ]
+
+        if not violates:
+            return []
+        return [
+            Violation(
+                policy_id=policy.id,
+                severity=policy.severity,
+                category=policy.category,
+                message=f"Guardian: {raw_output.strip()} (confidence: {confidence:.2f})",
+                source="llm",
+            )
+        ]
+
+
+def _check_matches_stage(check: CheckConfig, stage: str) -> bool:
+    check_stage = check.stage or "both"
+    if check_stage == "both":
+        return True
+    return check_stage == stage
+
+
+def _parse_guardian_response(body: dict, threshold: float) -> tuple[bool, float, str]:
+    """Parse Granite Guardian response. Returns (violates, confidence, raw_output)."""
+    import math
+
+    choices = body.get("choices", [])
+    if not choices:
+        return False, 0.0, ""
+
+    choice = choices[0]
+    content = (choice.get("message") or {}).get("content", "").strip()
+
+    logprobs_data = choice.get("logprobs")
+    if logprobs_data and isinstance(logprobs_data, dict):
+        token_logprobs = logprobs_data.get("content", [])
+        if token_logprobs and isinstance(token_logprobs[0], dict):
+            top = token_logprobs[0].get("top_logprobs", [])
+            for entry in top:
+                token = entry.get("token", "").strip().lower()
+                if token == "yes":
+                    yes_prob = math.exp(entry.get("logprob", -100))
+                    return yes_prob > threshold, yes_prob, content
+
+    # Fallback: check text content if no logprobs
+    violates = content.lower().startswith("yes")
+    return violates, 1.0 if violates else 0.0, content
 
 
 def _strip_image_data(request: dict[str, Any]) -> dict[str, Any]:
