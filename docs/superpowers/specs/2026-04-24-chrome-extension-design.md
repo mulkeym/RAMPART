@@ -230,6 +230,17 @@ extension/
     └── icon128.png
 ```
 
+## Download from RAMPART GUI
+
+Add a download page at `/ui/extension` accessible from the nav bar:
+
+- **Page content:** Brief setup instructions + "Download Extension" button
+- **Download endpoint:** `GET /ui/extension/download` returns a ZIP file containing the extension directory
+- **Pre-configured:** The downloaded ZIP has the RAMPART server URL pre-filled based on the request's host (e.g., if you access RAMPART at `http://192.168.1.232:8080`, the extension defaults to that URL)
+- **Nav link:** "Extension" added to the header nav between "Playground" and "Settings"
+
+The ZIP is generated on-the-fly from the `extension/` directory, with the server URL injected into `popup.js` as the default.
+
 ## Not In Scope
 
 - Multi-site support (Claude.ai, Gemini, etc.) — future work
