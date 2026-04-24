@@ -61,13 +61,12 @@ async def enroll(request: Request) -> JSONResponse:
 
     existing = get_client(client_id, config.clients.path)
     if existing:
-        # Re-enrollment: rotate the key
+        # Re-enrollment: rotate the key and update group
         created = rotate_client_key(client_id, config.clients.path)
-        # Update policies to match current group
         existing = get_client(client_id, config.clients.path)
         if existing:
-            existing.policy_ids = group.policy_ids
-            existing.notes = f"Group: {group.id}"
+            existing.group_id = group.id
+            existing.policy_ids = []  # Policies come from group, not client
             from rampart.app.client_store import update_client
             update_client(existing, config.clients.path)
         return JSONResponse({
@@ -80,7 +79,7 @@ async def enroll(request: Request) -> JSONResponse:
             "rampart_url": server_url,
         })
 
-    # New enrollment
+    # New enrollment — group_id set, no policy_ids copied
     created = create_client(
         client_id=client_id,
         customer=group.name,
@@ -90,9 +89,15 @@ async def enroll(request: Request) -> JSONResponse:
         team=group.id,
         environment="extension",
         notes=f"Group: {group.id}",
-        policy_ids=group.policy_ids,
+        policy_ids=[],  # Policies resolved dynamically from group
         path=config.clients.path,
     )
+    # Set group_id on the new client
+    new_client = get_client(created.client.id, config.clients.path)
+    if new_client:
+        new_client.group_id = group.id
+        from rampart.app.client_store import update_client
+        update_client(new_client, config.clients.path)
     return JSONResponse({
         "status": "enrolled",
         "client_id": created.client.id,

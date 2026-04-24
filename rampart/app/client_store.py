@@ -28,6 +28,7 @@ class ClientRecord(BaseModel):
     upstream_api_key: str = ""
     upstream_timeout_seconds: Optional[float] = None
     notes: str = ""
+    group_id: str = ""
     policy_ids: list[str] = Field(default_factory=list)
     enabled: bool = True
     key_hash: str

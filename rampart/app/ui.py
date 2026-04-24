@@ -808,7 +808,7 @@ def _client_row(client: ClientRecord) -> str:
     owner = client.owner_email or client.owner_name
     return f"""
       <tr>
-        <td><code>{escape(client.id)}</code><div class="muted">{escape(client.team)}</div></td>
+        <td><code>{escape(client.id)}</code><div class="muted">{escape(client.group_id or client.team)}</div></td>
         <td>{escape(client.customer)}</td>
         <td>{escape(client.app_name)}<div class="muted">{escape(client.environment)}</div></td>
         <td>{escape(owner)}</td>
@@ -833,7 +833,7 @@ def _client_row(client: ClientRecord) -> str:
 
 def _group_row(group: GroupRecord, clients: list) -> str:
     status = "enabled" if group.enabled else "disabled"
-    enrolled = sum(1 for c in clients if c.team == group.id and c.environment == "extension")
+    enrolled = sum(1 for c in clients if c.group_id == group.id)
     masked_key = group.enrollment_key[:8] + "..." if len(group.enrollment_key) > 8 else group.enrollment_key
     return f"""
       <tr>
