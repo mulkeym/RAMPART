@@ -185,7 +185,12 @@
                     }
                 }
 
+                if (imageAssets.length > 0 && images.length === 0) {
+                    console.log('[RAMPART] Images detected but not available for evaluation (ChatGPT uses internal upload). Text will still be evaluated.');
+                }
+
                 if (prompt || images.length > 0) {
+                    console.log('[RAMPART] Evaluating prompt:', (prompt || '').substring(0, 100), '| images:', images.length);
                     const result = await sendToBridge('evaluate', { prompt: prompt || '', images: images });
 
                     if (result && result.error) {
