@@ -11,6 +11,10 @@ from pydantic import ValidationError
 
 from rampart.app.client_store import ClientRecord, create_client, delete_client as store_delete_client, get_client, list_clients, rotate_client_key, set_client_enabled, update_client
 from rampart.app.config import CheckConfig, PolicyConfig, get_config, get_policy_path
+from rampart.app.group_store import (
+    GroupRecord, create_group as store_create_group, delete_group as store_delete_group,
+    get_group, list_groups as store_list_groups, regenerate_enrollment_key, update_group as store_update_group,
+)
 from rampart.app.policy_store import delete_policy, get_policy, upsert_policy
 from rampart.app.security.audit import audit_event
 from rampart.app.security.auth import authenticate, clear_session_cookie, read_session_user, require_ui_user, set_session_cookie
@@ -492,6 +496,107 @@ async def delete_client_route(client_id: str, request: Request) -> RedirectRespo
     return RedirectResponse("/ui/clients?message=Client+deleted", status_code=303)
 
 
+@router.get("/ui/groups", response_class=HTMLResponse)
+async def groups_index(request: Request, message: Optional[str] = None) -> HTMLResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    groups = store_list_groups()
+    clients = list_clients(get_config().clients.path)
+    rows = "\n".join(_group_row(g, clients) for g in groups)
+    body = f"""
+      <section class="toolbar">
+        <div><h1>Groups</h1><p>Manage enrollment groups for Chrome extension auto-provisioning.</p></div>
+        <a class="button primary" href="/ui/groups/new">New Group</a>
+      </section>
+      {_notice(message, None)}
+      <section class="panel">
+        <table>
+          <thead><tr><th>Name</th><th>Enrollment Key</th><th>Policies</th><th>Users</th><th>Status</th><th></th></tr></thead>
+          <tbody>{rows or _empty_row(6, "No groups created yet.")}</tbody>
+        </table>
+      </section>
+    """
+    return HTMLResponse(_page("RAMPART Groups", body, read_session_user(request)))
+
+
+@router.get("/ui/groups/new", response_class=HTMLResponse)
+async def new_group(request: Request) -> HTMLResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    return HTMLResponse(_group_form(None, "Create Group", "/ui/groups/new", actor=read_session_user(request)))
+
+
+@router.post("/ui/groups/new", response_class=HTMLResponse)
+async def create_group_route(request: Request) -> HTMLResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    form = await _form_data(request)
+    group_id = _clean_policy_id(form.get("id", ""))
+    name = form.get("name", "").strip()
+    if not group_id or not name:
+        return HTMLResponse(_group_form(None, "Create Group", "/ui/groups/new", "Group ID and name are required.", read_session_user(request)), status_code=400)
+    policy_ids = _selected_policy_ids(form)
+    try:
+        store_create_group(group_id=group_id, name=name, policy_ids=policy_ids)
+    except ValueError as e:
+        return HTMLResponse(_group_form(None, "Create Group", "/ui/groups/new", str(e), read_session_user(request)), status_code=400)
+    return RedirectResponse(f"/ui/groups?message=Group+{group_id}+created", status_code=303)
+
+
+@router.get("/ui/groups/{group_id}", response_class=HTMLResponse)
+async def edit_group(group_id: str, request: Request) -> HTMLResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    group = get_group(group_id)
+    if not group:
+        return HTMLResponse(_page("Group Not Found", f"<p>Group <code>{escape(group_id)}</code> not found.</p>", read_session_user(request)), status_code=404)
+    return HTMLResponse(_group_form(group, f"Edit {group.name}", f"/ui/groups/{group.id}", actor=read_session_user(request)))
+
+
+@router.post("/ui/groups/{group_id}", response_class=HTMLResponse)
+async def update_group_route(group_id: str, request: Request) -> HTMLResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    group = get_group(group_id)
+    if not group:
+        return RedirectResponse("/ui/groups?message=Group+not+found", status_code=303)
+    form = await _form_data(request)
+    group.name = form.get("name", group.name).strip()
+    group.policy_ids = _selected_policy_ids(form)
+    group.enabled = form.get("enabled") == "on"
+    store_update_group(group)
+    return RedirectResponse(f"/ui/groups?message=Group+{group_id}+saved", status_code=303)
+
+
+@router.post("/ui/groups/{group_id}/delete", response_class=HTMLResponse)
+async def delete_group_route(group_id: str, request: Request) -> RedirectResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    try:
+        store_delete_group(group_id)
+    except ValueError:
+        pass
+    return RedirectResponse("/ui/groups?message=Group+deleted", status_code=303)
+
+
+@router.post("/ui/groups/{group_id}/regenerate", response_class=HTMLResponse)
+async def regenerate_key_route(group_id: str, request: Request) -> RedirectResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    try:
+        regenerate_enrollment_key(group_id)
+    except ValueError:
+        pass
+    return RedirectResponse("/ui/groups?message=Enrollment+key+regenerated", status_code=303)
+
+
 @router.get("/ui/policies/new", response_class=HTMLResponse)
 async def new_policy(request: Request) -> HTMLResponse:
     redirect = require_ui_user(request)
@@ -722,6 +827,69 @@ def _client_row(client: ClientRecord) -> str:
         </td>
       </tr>
     """
+
+
+def _group_row(group: GroupRecord, clients: list) -> str:
+    status = "enabled" if group.enabled else "disabled"
+    enrolled = sum(1 for c in clients if c.team == group.id and c.environment == "extension")
+    masked_key = group.enrollment_key[:8] + "..." if len(group.enrollment_key) > 8 else group.enrollment_key
+    return f"""
+      <tr>
+        <td><code>{escape(group.id)}</code><div class="muted">{escape(group.name)}</div></td>
+        <td><code title="{escape(group.enrollment_key)}" style="cursor:pointer" onclick="navigator.clipboard.writeText('{escape(group.enrollment_key)}')">{escape(masked_key)}</code></td>
+        <td>{len(group.policy_ids) or "all"}</td>
+        <td>{enrolled}</td>
+        <td><span class="pill {status}">{status}</span></td>
+        <td class="row-actions">
+          <a class="button small" href="/ui/groups/{escape(group.id)}">Edit</a>
+          <form class="confirm-action" method="post" action="/ui/groups/{escape(group.id)}/regenerate" data-confirm-title="Regenerate Key?" data-confirm-message="This will invalidate the current enrollment key for {escape(group.name)}.">
+            <button class="button small" type="submit">Regen Key</button>
+          </form>
+          <form class="confirm-action" method="post" action="/ui/groups/{escape(group.id)}/delete" data-confirm-title="Delete Group?" data-confirm-message="Delete group {escape(group.name)}? Enrolled users keep their API keys.">
+            <button class="button small danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    """
+
+
+def _group_form(group, title: str, action_url: str, error: Optional[str] = None, actor: Optional[str] = None) -> str:
+    gid = group.id if group else ""
+    name = group.name if group else ""
+    enabled = "checked" if (group.enabled if group else True) else ""
+    readonly_id = "readonly" if group else ""
+    selected = list(set(group.policy_ids)) if group else []
+    policy_checkboxes = _policy_assignment_checkboxes(selected)
+    enrollment_key_html = ""
+    if group:
+        enrollment_key_html = f"""
+          <label>Enrollment Key
+            <div style="display:flex;gap:8px;align-items:center">
+              <input value="{escape(group.enrollment_key)}" readonly style="flex:1;font-family:monospace">
+              <button type="button" class="button small" onclick="navigator.clipboard.writeText('{escape(group.enrollment_key)}')">Copy</button>
+            </div>
+          </label>
+        """
+    body = f"""
+      <section class="toolbar">
+        <div><h1>{escape(title)}</h1><p>Groups enable Chrome extension auto-provisioning.</p></div>
+        <a class="button" href="/ui/groups">Back</a>
+      </section>
+      {_notice(None, error)}
+      <form class="panel form" method="post" action="{escape(action_url)}">
+        <label>Group ID<input name="id" value="{escape(gid)}" required {readonly_id}></label>
+        <label>Name<input name="name" value="{escape(name)}" required></label>
+        {enrollment_key_html}
+        <label class="checkbox"><input type="checkbox" name="enabled" {enabled}> Enabled</label>
+        <fieldset class="fieldset">
+          <legend>Assigned Policies</legend>
+          <div class="hint">Users enrolled in this group will be assigned these policies. If none selected, all enabled policies apply.</div>
+          {policy_checkboxes}
+        </fieldset>
+        <div class="actions"><button class="button primary" type="submit">Save Group</button></div>
+      </form>
+    """
+    return _page(title, body, actor)
 
 
 def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = None, error: Optional[str] = None, actor: Optional[str] = None) -> str:
@@ -1252,12 +1420,15 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
             return "active"
         if label == "Extension" and "extension" in t:
             return "active"
+        if label == "Groups" and "group" in t:
+            return "active"
         return ""
 
     auth_nav = (
         f'<div class="nav-links">'
         f'<a class="{_nav_class("Policies")}" href="/ui/policies">Policies</a>'
         f'<a class="{_nav_class("API Keys")}" href="/ui/clients">API Keys</a>'
+        f'<a class="{_nav_class("Groups")}" href="/ui/groups">Groups</a>'
         f'<a class="{_nav_class("Violations")}" href="/ui/violations">Violations</a>'
         f'<a class="{_nav_class("Playground")}" href="/ui/playground">Playground</a>'
         f'<a class="{_nav_class("Extension")}" href="/ui/extension">Extension</a>'
