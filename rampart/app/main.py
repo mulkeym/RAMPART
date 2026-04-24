@@ -11,6 +11,7 @@ from rampart.app.models import EvaluationRequest, EvaluationResponse, HealthResp
 from rampart.app.openai.proxy import openai_policy_error, proxy_chat_completion
 from rampart.app.policy.engine import PolicyEngine
 from rampart.app.tracking import ClientContext, write_evaluation_event
+from rampart.app.enrollment import router as enrollment_router
 from rampart.app.extension import router as extension_router
 from rampart.app.mcp_server import router as mcp_router
 from rampart.app.playground import router as playground_router
@@ -31,6 +32,7 @@ app.add_middleware(
 app.include_router(ui_router)
 app.include_router(playground_router)
 app.include_router(extension_router)
+app.include_router(enrollment_router)
 app.include_router(mcp_router)
 
 
