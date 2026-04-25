@@ -223,3 +223,39 @@ policies:
       \ member, dependent, retiree, or beneficiary. Generic \r\nmedical questions,\
       \ public health information, and de-identified \r\naggregate statistics are\
       \ not PHI."
+- id: no-cti
+  enabled: true
+  severity: high
+  category: policy
+  description: Controlled Technical Information about Defense systems whose disclosure
+    could enable adversary action.
+  action: block
+  checks:
+  - type: llm
+    instruction: "The text contains Controlled Technical Information about Defense\
+      \ Health Agency or Department of Defense information systems whose disclosure\
+      \ could enable adversary action. This includes internal network architecture,\
+      \ IP address ranges, hostnames, authentication mechanisms, unpatched vulnerabilities,\
+      \ configuration details, system accreditation packages or ATO artifacts, and\
+      \ technical documentation marked with Distribution Statements B through F.\
+      \ Generic descriptions of commercial products, publicly documented standards,\
+      \ and questions about open-source tooling are not included."
+- id: no-dod-ops-personnel
+  enabled: true
+  severity: high
+  category: policy
+  description: Non-public DoD operational and personnel information whose disclosure
+    outside the agency would be inappropriate.
+  action: block
+  checks:
+  - type: llm
+    instruction: "The text contains non-public Department of Defense operational,\
+      \ readiness, or personnel information whose disclosure outside the agency\
+      \ would be inappropriate. This includes unit-level health readiness statistics,\
+      \ casualty figures, force health protection details tied to specific units,\
+      \ deployments, or operations; internal Military Treatment Facility procedures\
+      \ or staffing details; medical surveillance or biosurveillance data; and\
+      \ personally identifiable information about named service members, contractors,\
+      \ or government employees that pairs identity with rank, unit assignment,\
+      \ EDIPI, or work role. Public-facing DoD news, press releases, and general\
+      \ program descriptions are not included."

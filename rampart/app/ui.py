@@ -1172,8 +1172,8 @@ def _client_form(client: Optional[ClientRecord], title: str, action_url: str, er
           <label>API Key<input name="upstream_api_key" value="{get_value("upstream_api_key")}" autocomplete="off"></label>
           <label>Timeout Seconds<input name="upstream_timeout_seconds" value="{get_value("upstream_timeout_seconds")}" inputmode="decimal"></label>
         </fieldset>
-        <label class="checkbox"><input type="checkbox" name="enabled" {enabled}> Enabled</label>
-        <label class="checkbox"><input type="checkbox" name="discovery_enabled" {"checked" if (client.discovery_enabled if client else False) else ""}> Discovery Mode</label>
+        <label style="display:flex;align-items:center;gap:8px;width:fit-content"><input type="checkbox" name="enabled" {enabled} style="width:auto"> Enabled</label>
+        <label style="display:flex;align-items:center;gap:8px;width:fit-content"><input type="checkbox" name="discovery_enabled" {"checked" if (client.discovery_enabled if client else False) else ""} style="width:auto"> Discovery Mode</label>
         <div class="hint" style="margin-top:-8px">When enabled, the extension captures all POST requests on unknown sites for endpoint discovery.</div>
         {_client_policy_section(client, is_group_member, policy_checkboxes)}
         <label>Notes<textarea name="notes" rows="4">{get_value("notes")}</textarea></label>
@@ -1696,7 +1696,8 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
     .stat-sub.muted {{ color: var(--muted); }}
     .form {{ padding: 20px; display: grid; gap: 16px; }}
     label {{ display: grid; gap: 5px; font-weight: 600; font-size: 13px; color: var(--text-secondary); }}
-    .checkbox {{ display: flex; align-items: center; gap: 8px; }}
+    .checkbox {{ display: flex; align-items: center; gap: 8px; width: fit-content; }}
+    .checkbox input {{ width: auto; }}
     .policy-option {{ align-items: flex-start; font-weight: 400; }}
     .policy-option input {{ width: auto; margin-top: 3px; }}
     .fieldset {{ border: 1px solid var(--border); border-radius: 6px; padding: 12px; display: grid; gap: 10px; }}

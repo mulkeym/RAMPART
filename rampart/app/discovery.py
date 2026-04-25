@@ -105,8 +105,8 @@ async def sites_index(request: Request, message: Optional[str] = None) -> HTMLRe
         </div>
       </section>
       {_notice(message, None)}
-      <section class="panel">
-        <table>
+      <section class="panel" style="overflow-x:auto">
+        <table style="min-width:700px">
           <thead><tr><th>Name</th><th>URL Pattern</th><th>Endpoint</th><th>Prompt Field</th><th>Status</th><th></th></tr></thead>
           <tbody>{rows or _empty_row(6, "No sites configured. Use discovery mode or add manually.")}</tbody>
         </table>
@@ -242,7 +242,7 @@ async def discovery_page(request: Request, client_id: Optional[str] = None) -> H
           <select onchange="window.location='/ui/discovery?client_id='+this.value">{client_options or '<option>No discovery clients</option>'}</select>
         </label>
         <span class="muted" style="font-size:12px">{len(captures)} captured requests</span>
-        <form method="post" action="/ui/discovery/analyze" style="margin:0">
+        <form method="post" action="/ui/discovery/analyze" style="margin:0" onsubmit="var b=this.querySelector('button');b.textContent='Processing...';b.disabled=true;b.style.opacity='0.6'">
           <input type="hidden" name="client_id" value="{escape(selected)}">
           <button class="button small primary" type="submit">Analyze with LLM</button>
         </form>
@@ -251,13 +251,13 @@ async def discovery_page(request: Request, client_id: Optional[str] = None) -> H
           <button class="button small danger" type="submit">Clear Captures</button>
         </form>
       </div>
-      <section class="panel">
-        <table>
+      {analysis_html}
+      <section class="panel" style="overflow-x:auto">
+        <table style="min-width:700px">
           <thead><tr><th>URL</th><th>Format</th><th>Body Keys</th><th>Preview</th><th>Time</th></tr></thead>
           <tbody>{capture_rows or _empty_row(5, "No captures yet. Enable discovery on a client and have them browse an AI site.")}</tbody>
         </table>
       </section>
-      {analysis_html}
     """
     return HTMLResponse(_page("RAMPART Discovery", body, read_session_user(request)))
 
@@ -286,22 +286,35 @@ Here are the captured POST requests:
 {captures_json}
 
 Analyze these requests and identify:
-1. Which URL is the conversation/chat endpoint (the one that sends the user's message)
+1. Which URL is the conversation/chat endpoint (the one that sends the user's message to the AI)
 2. What format the request body uses (JSON or FormData)
 3. Which field contains the user's prompt/message
-4. How to extract just the user's latest message
+4. The correct extraction method to get just the user's text
+
+EXTRACTION METHODS (choose the best fit):
+- "direct" — The prompt_field value IS the prompt string. Use when body has a simple field like {{"message": "hello"}}
+- "json_array_last_user" — The prompt_field contains a JSON array of conversation entries like [{{"user":"me","message":"hello"}}]. Specify user_key and message_key. Also works for nested arrays where the prompt is at arr[0][0] (e.g. Gemini's f.req field).
+- "chatgpt_parts" — OpenAI ChatGPT format: body has messages[0].content.parts array. Set prompt_field to "messages". Use ONLY for ChatGPT (chatgpt.com).
+- "openai_messages" — Standard OpenAI API format: body has messages[] array, extract last message content. Use for OpenAI-compatible APIs.
+- "deep_scan" — The prompt_field contains deeply nested JSON arrays. The prompt text will be found by recursively scanning for the first substantial string. Use as last resort for complex/obfuscated formats.
+
+TIPS:
+- Look at body_preview and body_keys to identify the format
+- The conversation endpoint is usually the one with user-generated text in the body_preview
+- For FormData bodies, the prompt may be in a URL-encoded field like f.req
+- Ignore analytics, logging, telemetry, and auth endpoints
 
 Return ONLY valid JSON (no markdown, no explanation):
 {{
-    "conversation_endpoint": "the URL path pattern to match",
-    "domain": "the domain name",
+    "conversation_endpoint": "a LITERAL substring from the URL that identifies the chat endpoint — do NOT use template variables like {{org_id}}, use only text that appears verbatim in the URL (e.g. /completion, /chat, /query)",
+    "domain": "the site domain",
     "body_format": "json or formdata",
-    "prompt_field": "the field name containing the prompt",
-    "extraction_method": "direct or json_array_last_user",
-    "user_key": "the value identifying user messages in array (if applicable)",
-    "message_key": "the key within each array entry for message text (if applicable)",
+    "prompt_field": "the field name containing the prompt (e.g. message, f.req, prompt, messages)",
+    "extraction_method": "direct | json_array_last_user | chatgpt_parts | openai_messages | deep_scan",
+    "user_key": "value identifying user messages in array, or empty string if not applicable",
+    "message_key": "key for message text in array entries, or empty string if not applicable",
     "confidence": "high, medium, or low",
-    "reasoning": "brief explanation"
+    "reasoning": "brief explanation of why this endpoint and extraction method were chosen"
 }}"""
 
     try:
@@ -382,10 +395,10 @@ def _site_row(site: SiteConfig) -> str:
     status = "enabled" if site.enabled else "disabled"
     return f"""
       <tr>
-        <td><code>{escape(site.id)}</code><div class="muted">{escape(site.name)}</div></td>
-        <td><code>{escape(site.url_pattern)}</code></td>
-        <td><code>{escape(site.endpoint_contains)}</code></td>
-        <td>{escape(site.prompt_field)} ({escape(site.prompt_extraction)})</td>
+        <td style="white-space:nowrap"><code>{escape(site.id)}</code><div class="muted">{escape(site.name)}</div></td>
+        <td style="max-width:200px;word-break:break-all"><code>{escape(site.url_pattern)}</code></td>
+        <td style="max-width:250px;word-break:break-all"><code>{escape(site.endpoint_contains)}</code></td>
+        <td style="white-space:nowrap">{escape(site.prompt_field)} ({escape(site.prompt_extraction)})</td>
         <td><span class="pill {status}">{status}</span></td>
         <td class="row-actions">
           <a class="button small" href="/ui/sites/{escape(site.id)}">Edit</a>
@@ -414,7 +427,10 @@ def _site_form(site: Optional[SiteConfig], title: str, action_url: str, error: O
     bf_form = "selected" if body_format == "formdata" else ""
     pe_direct = "selected" if prompt_extraction == "direct" else ""
     pe_array = "selected" if prompt_extraction == "json_array_last_user" else ""
-    array_fields_style = "" if prompt_extraction == "json_array_last_user" else "display:none"
+    pe_chatgpt = "selected" if prompt_extraction == "chatgpt_parts" else ""
+    pe_openai = "selected" if prompt_extraction == "openai_messages" else ""
+    pe_deep = "selected" if prompt_extraction == "deep_scan" else ""
+    array_fields_style = "" if prompt_extraction in ("json_array_last_user", "deep_scan") else "display:none"
 
     body = f"""
       <section class="toolbar">
@@ -438,9 +454,12 @@ def _site_form(site: Optional[SiteConfig], title: str, action_url: str, error: O
           </select>
         </label>
         <label>Prompt Extraction
-          <select name="prompt_extraction" onchange="document.getElementById('array-fields').style.display=this.value==='json_array_last_user'?'':'none'">
-            <option value="direct" {pe_direct}>Direct &mdash; field is the prompt string</option>
-            <option value="json_array_last_user" {pe_array}>JSON Array &mdash; last user entry in conversation history</option>
+          <select name="prompt_extraction" onchange="document.getElementById('array-fields').style.display=(this.value==='json_array_last_user'||this.value==='deep_scan')?'':'none'">
+            <option value="direct" {pe_direct}>Direct &mdash; field value is the prompt string</option>
+            <option value="json_array_last_user" {pe_array}>JSON Array &mdash; last user entry in conversation array</option>
+            <option value="chatgpt_parts" {pe_chatgpt}>ChatGPT Parts &mdash; messages[0].content.parts</option>
+            <option value="openai_messages" {pe_openai}>OpenAI Messages &mdash; last message in messages[] array</option>
+            <option value="deep_scan" {pe_deep}>Deep Scan &mdash; recursively find prompt in nested arrays</option>
           </select>
         </label>
         <label>Prompt Field Name<input name="prompt_field" value="{escape(prompt_field)}" placeholder="message"></label>

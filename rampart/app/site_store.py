@@ -9,6 +9,57 @@ from pydantic import BaseModel, Field
 
 SITE_STORE_PATH = "data/sites.json"
 
+DEFAULT_SITES: list[dict] = [
+    {
+        "id": "chatgpt",
+        "name": "ChatGPT",
+        "url_pattern": "chatgpt.com",
+        "endpoint_contains": "/conversation",
+        "body_format": "json",
+        "prompt_extraction": "chatgpt_parts",
+        "prompt_field": "messages",
+        "prompt_user_key": "",
+        "prompt_message_key": "",
+        "enabled": True,
+    },
+    {
+        "id": "asksage",
+        "name": "Ask Sage",
+        "url_pattern": "asksage.ai",
+        "endpoint_contains": "/server/query",
+        "body_format": "formdata",
+        "prompt_extraction": "json_array_last_user",
+        "prompt_field": "message",
+        "prompt_user_key": "me",
+        "prompt_message_key": "message",
+        "enabled": True,
+    },
+    {
+        "id": "gemini",
+        "name": "Google Gemini",
+        "url_pattern": "gemini.google.com",
+        "endpoint_contains": "StreamGenerate",
+        "body_format": "formdata",
+        "prompt_extraction": "json_array_last_user",
+        "prompt_field": "f.req",
+        "prompt_user_key": "user",
+        "prompt_message_key": "text",
+        "enabled": True,
+    },
+    {
+        "id": "claude",
+        "name": "Claude",
+        "url_pattern": "claude.ai",
+        "endpoint_contains": "/completion",
+        "body_format": "json",
+        "prompt_extraction": "direct",
+        "prompt_field": "prompt",
+        "prompt_user_key": "",
+        "prompt_message_key": "",
+        "enabled": True,
+    },
+]
+
 
 class SiteConfig(BaseModel):
     id: str
@@ -27,12 +78,29 @@ class SiteStore(BaseModel):
     sites: list[SiteConfig] = Field(default_factory=list)
 
 
+def _ensure_defaults(store: SiteStore) -> bool:
+    """Merge default sites into the store if not already present. Returns True if any were added."""
+    existing_ids = {s.id for s in store.sites}
+    added = False
+    for default in DEFAULT_SITES:
+        if default["id"] not in existing_ids:
+            store.sites.append(SiteConfig(**default))
+            added = True
+    return added
+
+
 def load_site_store(path: Optional[str] = None) -> SiteStore:
     store_path = Path(path or SITE_STORE_PATH)
     if not store_path.exists():
-        return SiteStore()
+        store = SiteStore()
+        _ensure_defaults(store)
+        save_site_store(store, path)
+        return store
     with store_path.open("r", encoding="utf-8") as f:
-        return SiteStore.model_validate(json.load(f))
+        store = SiteStore.model_validate(json.load(f))
+    if _ensure_defaults(store):
+        save_site_store(store, path)
+    return store
 
 
 def save_site_store(store: SiteStore, path: Optional[str] = None) -> None:
