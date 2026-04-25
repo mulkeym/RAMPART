@@ -21,16 +21,21 @@ Mount volumes to persist configuration, API keys, and logs across container rest
 ```bash
 mkdir -p /opt/rampart/{data,logs,policies}
 
-docker run -d -p 8080:8080 --name rampart \
+docker run -d -p 8080:8080 -p 8443:8443 --name rampart \
   -v /opt/rampart/data:/app/data \
   -v /opt/rampart/logs:/app/logs \
   -v /opt/rampart/policies:/app/policies \
   ghcr.io/mulkeym/rampart:latest
 ```
 
+| Port | Service | Purpose |
+|------|---------|---------|
+| `8080` | Main app (HTTP) | UI, API, playground, MCP, extension download |
+| `8443` | Identity server (HTTPS/mTLS) | CAC-based extension enrollment (optional, requires certs in `data/certs/`) |
+
 | Volume | Contents |
 |--------|----------|
-| `data/` | Admin credentials, API key store, runtime settings (MCP key, LLM config) |
+| `data/` | Admin credentials, API key store, runtime settings, groups, mTLS certs |
 | `logs/` | Audit trail, violation/evaluation events |
 | `policies/` | Policy YAML file |
 
