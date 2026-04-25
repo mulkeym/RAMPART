@@ -171,18 +171,65 @@
         }
     }, true);
 
+    // Load site configs and discovery mode from RAMPART
+    let siteConfigs = [];
+    let discoveryMode = false;
+    let discoveryCaptureBuffer = [];
+
+    sendToBridge('getConfig', {}).then(config => {
+        if (config && config.sites) siteConfigs = config.sites;
+        if (config && config.discovery) discoveryMode = true;
+    });
+
+    function matchesSiteConfig(url) {
+        for (const site of siteConfigs) {
+            if (url.includes(site.url_pattern) && url.includes(site.endpoint_contains)) {
+                return site;
+            }
+        }
+        return null;
+    }
+
+    function extractPromptFromSite(body, site) {
+        const fieldValue = body[site.prompt_field];
+        if (!fieldValue) return null;
+        if (site.prompt_extraction === 'direct') {
+            return typeof fieldValue === 'string' ? fieldValue : null;
+        }
+        if (site.prompt_extraction === 'json_array_last_user') {
+            try {
+                const arr = typeof fieldValue === 'string' ? JSON.parse(fieldValue) : fieldValue;
+                if (Array.isArray(arr)) {
+                    for (let i = arr.length - 1; i >= 0; i--) {
+                        if (arr[i].user === site.prompt_user_key) {
+                            return arr[i][site.prompt_message_key || 'message'] || null;
+                        }
+                    }
+                }
+            } catch (e) {}
+        }
+        return null;
+    }
+
+    // Flush discovery captures every 30 seconds
+    setInterval(() => {
+        if (discoveryCaptureBuffer.length > 0) {
+            const batch = discoveryCaptureBuffer.splice(0);
+            sendToBridge('sendCaptures', { captures: batch });
+        }
+    }, 30000);
+
     // Override fetch
     const originalFetch = window.fetch;
     window.fetch = async function(url, options) {
         // Detect conversation endpoints across supported AI chat sites
         const isConversation = typeof url === 'string' && options && options.method === 'POST' && (
-            // ChatGPT
             url.includes('/backend-api/conversation') ||
             url.includes('/backend-api/f/conversation') ||
             url.includes('/backend-anon/conversation') ||
             url.includes('/backend-anon/f/conversation') ||
-            // Ask Sage
-            (url.includes('asksage.ai') && url.includes('/server/query'))
+            (url.includes('asksage.ai') && url.includes('/server/query')) ||
+            matchesSiteConfig(url) !== null
         );
         if (isConversation) {
             const settings = await sendToBridge('getSettings', {});
@@ -221,7 +268,8 @@
                 } else {
                     body = {};
                 }
-                const prompt = extractPrompt(body);
+                const matchedSite = matchesSiteConfig(url);
+                const prompt = matchedSite ? extractPromptFromSite(body, matchedSite) : extractPrompt(body);
                 const imageAssets = extractImageAssets(body);
 
                 // Include any captured images (from paste, drop, or FormData)
@@ -249,6 +297,33 @@
                 }
             } catch (e) {
                 if (e.name === 'AbortError') throw e;
+            }
+        }
+        // Discovery mode: capture POST requests on unknown sites
+        if (discoveryMode && typeof url === 'string' && options && options.method === 'POST') {
+            if (!url.includes('rampart') && !url.includes('google') && !url.includes('analytics') && !url.includes('datadog') && !url.includes('sentry')) {
+                try {
+                    let bodyKeys = [];
+                    let bodyPreview = '';
+                    let bodyFormat = 'unknown';
+                    if (options.body instanceof FormData) {
+                        bodyFormat = 'formdata';
+                        for (const [key] of options.body.entries()) bodyKeys.push(key);
+                    } else if (typeof options.body === 'string') {
+                        bodyFormat = 'json';
+                        try {
+                            bodyKeys = Object.keys(JSON.parse(options.body));
+                            bodyPreview = options.body.substring(0, 500);
+                        } catch(e) { bodyPreview = options.body.substring(0, 500); }
+                    }
+                    discoveryCaptureBuffer.push({
+                        url: url.substring(0, 500),
+                        body_keys: bodyKeys.slice(0, 20),
+                        body_preview: bodyPreview,
+                        body_format: bodyFormat,
+                        content_type: (options.headers && options.headers['content-type']) || '',
+                    });
+                } catch(e) {}
             }
         }
         return originalFetch.call(this, url, options);

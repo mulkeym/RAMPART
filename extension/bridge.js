@@ -56,4 +56,22 @@ window.addEventListener('message', async (event) => {
             window.postMessage({ source: 'rampart-bridge', id: event.data.id, result: { enabled: true } }, '*');
         }
     }
+
+    if (event.data.type === 'getConfig') {
+        try {
+            const config = await chrome.runtime.sendMessage({ type: 'getConfig' });
+            window.postMessage({ source: 'rampart-bridge', id: event.data.id, result: config }, '*');
+        } catch (e) {
+            window.postMessage({ source: 'rampart-bridge', id: event.data.id, result: { discovery: false, sites: [] } }, '*');
+        }
+    }
+
+    if (event.data.type === 'sendCaptures') {
+        try {
+            const result = await chrome.runtime.sendMessage({ type: 'sendCaptures', captures: event.data.captures });
+            window.postMessage({ source: 'rampart-bridge', id: event.data.id, result: result }, '*');
+        } catch (e) {
+            window.postMessage({ source: 'rampart-bridge', id: event.data.id, result: { error: e.message } }, '*');
+        }
+    }
 });
