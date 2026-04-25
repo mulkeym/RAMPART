@@ -80,5 +80,14 @@ def clear_session_cookie(response: RedirectResponse) -> None:
     response.delete_cookie(config.session_cookie_name, httponly=True, samesite="lax", secure=config.secure_cookies)
 
 
+_auto_secret: str = ""
+
+
 def _serializer(config: AuthConfig) -> URLSafeTimedSerializer:
-    return URLSafeTimedSerializer(config.session_secret, salt="rampart-ui-session")
+    global _auto_secret
+    secret = config.session_secret
+    if not secret:
+        if not _auto_secret:
+            _auto_secret = secrets.token_urlsafe(48)
+        secret = _auto_secret
+    return URLSafeTimedSerializer(secret, salt="rampart-ui-session")

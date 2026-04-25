@@ -10,6 +10,7 @@ from rampart.app.client_store import create_client, get_client, rotate_client_ke
 from rampart.app.config import get_config
 from rampart.app.group_store import get_group_by_enrollment_key
 from rampart.app.identity import consume_nonce
+from rampart.app.ratelimit import check_rate_limit, rate_limit_response_json
 
 router = APIRouter()
 
@@ -23,6 +24,8 @@ def _generate_client_id(email: str, device_id: str) -> str:
 
 @router.post("/v1/enroll")
 async def enroll(request: Request) -> JSONResponse:
+    if not check_rate_limit(request):
+        return rate_limit_response_json()
     try:
         body = await request.json()
     except Exception:

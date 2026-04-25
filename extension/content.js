@@ -109,9 +109,9 @@
 
             let violationItems = violations.map(v =>
                 '<div class="rampart-violation-item">' +
-                '<span class="rampart-severity rampart-severity-' + (v.severity || 'medium') + '">' + (v.severity || 'medium') + '</span> ' +
-                '<strong>' + (v.policy_id || 'unknown') + '</strong>: ' +
-                (v.message || 'Policy violation') +
+                '<span class="rampart-severity rampart-severity-' + escapeHtml(v.severity || 'medium') + '">' + escapeHtml(v.severity || 'medium') + '</span> ' +
+                '<strong>' + escapeHtml(v.policy_id || 'unknown') + '</strong>: ' +
+                escapeHtml(v.message || 'Policy violation') +
                 '</div>'
             ).join('');
 

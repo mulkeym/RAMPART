@@ -4,6 +4,16 @@ const views = {
     settings: document.getElementById('settings-view'),
 };
 
+function setStatus(el, color, text) {
+    el.textContent = '';
+    const dot = document.createElement('span');
+    dot.className = 'dot ' + color;
+    const span = document.createElement('span');
+    span.textContent = text;
+    el.appendChild(dot);
+    el.appendChild(span);
+}
+
 function showView(name) {
     Object.values(views).forEach(v => v.classList.add('hidden'));
     views[name].classList.remove('hidden');
@@ -49,7 +59,7 @@ document.getElementById('enrollBtn').addEventListener('click', async () => {
     const groupKey = document.getElementById('groupKey').value.trim();
     const status = document.getElementById('enroll-status');
     if (!url || !groupKey) {
-        status.innerHTML = '<span class="dot red"></span><span>URL and group key required</span>';
+        setStatus(status, 'red', 'URL and group key required');
         return;
     }
     // Check for manual email entry
@@ -59,7 +69,7 @@ document.getElementById('enrollBtn').addEventListener('click', async () => {
         userName = manualEmail.split('@')[0];
     }
 
-    status.innerHTML = '<span class="dot gray"></span><span>Checking identity...</span>';
+    setStatus(status, 'gray', 'Checking identity...');
     try {
         // Try mTLS identity server for CAC-based identity
         let identityNonce = '';
@@ -74,7 +84,7 @@ document.getElementById('enrollBtn').addEventListener('click', async () => {
                     userEmail = idData.san || idData.identity;
                     userName = idData.cn || idData.identity;
                     identityResolved = true;
-                    status.innerHTML = '<span class="dot green"></span><span>Identity: ' + idData.identity + '</span>';
+                    setStatus(status, 'green', 'Identity: ' + (idData.identity || ''));
                 }
             }
         } catch (e) {
@@ -84,11 +94,11 @@ document.getElementById('enrollBtn').addEventListener('click', async () => {
         // If no identity from cert or Chrome, prompt for email
         if (!identityResolved && !userEmail) {
             document.getElementById('manual-identity').classList.remove('hidden');
-            status.innerHTML = '<span class="dot red"></span><span>Enter your email address to enroll</span>';
+            setStatus(status, 'red', 'Enter your email address to enroll');
             return;
         }
 
-        status.innerHTML = '<span class="dot gray"></span><span>Enrolling...</span>';
+        setStatus(status, 'gray', 'Enrolling...');
         const resp = await fetch(url + '/v1/enroll', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -114,10 +124,10 @@ document.getElementById('enrollBtn').addEventListener('click', async () => {
                 showView('enrolled');
             });
         } else {
-            status.innerHTML = '<span class="dot red"></span><span>' + (data.message || 'Enrollment failed') + '</span>';
+            setStatus(status, 'red', data.message || 'Enrollment failed');
         }
     } catch (e) {
-        status.innerHTML = '<span class="dot red"></span><span>Cannot connect: ' + e.message + '</span>';
+        setStatus(status, 'red', 'Cannot connect: ' + e.message);
     }
 });
 
@@ -147,23 +157,23 @@ document.getElementById('saveSettingsBtn').addEventListener('click', () => {
         rampartUrl: document.getElementById('settings-url').value.replace(/\/+$/, ''),
         apiKey: document.getElementById('settings-apiKey').value,
     }, () => {
-        status.innerHTML = '<span class="dot green"></span><span>Saved</span>';
+        setStatus(status, 'green', 'Saved');
     });
 });
 
 document.getElementById('testBtn').addEventListener('click', async () => {
     const status = document.getElementById('settings-status');
     const url = document.getElementById('settings-url').value.replace(/\/+$/, '');
-    status.innerHTML = '<span class="dot gray"></span><span>Testing...</span>';
+    setStatus(status, 'gray', 'Testing...');
     try {
         const resp = await fetch(url + '/health');
         if (resp.ok) {
-            status.innerHTML = '<span class="dot green"></span><span>Connected</span>';
+            setStatus(status, 'green', 'Connected');
         } else {
-            status.innerHTML = '<span class="dot red"></span><span>HTTP ' + resp.status + '</span>';
+            setStatus(status, 'red', 'HTTP ' + resp.status);
         }
     } catch (e) {
-        status.innerHTML = '<span class="dot red"></span><span>' + e.message + '</span>';
+        setStatus(status, 'red', e.message);
     }
 });
 

@@ -35,7 +35,7 @@ class AuthConfig(BaseModel):
     admin_username: str = "admin"
     admin_password_hash: str = ""
     auth_state_path: str = "data/auth.json"
-    session_secret: str = "change-me"
+    session_secret: str = ""
     session_cookie_name: str = "rampart_session"
     session_max_age_seconds: int = 28800
     secure_cookies: bool = False

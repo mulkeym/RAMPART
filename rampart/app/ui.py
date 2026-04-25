@@ -19,6 +19,7 @@ from rampart.app.policy_store import delete_policy, get_policy, upsert_policy
 from rampart.app.security.audit import audit_event
 from rampart.app.security.auth import authenticate, clear_session_cookie, read_session_user, require_ui_user, set_session_cookie
 from rampart.app.security.credentials import change_password
+from rampart.app.ratelimit import check_rate_limit, rate_limit_response_html
 from rampart.app.settings_store import RuntimeSettings, load_settings, save_settings
 from rampart.app.tls import tls_verify as _tls_verify
 from rampart.app.tracking import load_evaluation_events, summarize_customers, summarize_policies
@@ -38,6 +39,8 @@ async def login_form(next: str = "/ui/policies", error: Optional[str] = None) ->
 
 @router.post("/login", response_class=HTMLResponse)
 async def login(request: Request) -> HTMLResponse:
+    if not check_rate_limit(request):
+        return rate_limit_response_html()
     body = (await request.body()).decode("utf-8")
     form = {key: values[-1] for key, values in parse_qs(body, keep_blank_values=True).items()}
     username = form.get("username", "")
