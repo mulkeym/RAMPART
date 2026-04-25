@@ -688,12 +688,42 @@ async def remove_policy(policy_id: str, request: Request) -> RedirectResponse:
 async def _policy_from_form(request: Request, original_id: Optional[str] = None) -> tuple[Optional[PolicyConfig], Optional[str]]:
     form = await _form_data(request)
     try:
-        checks_data = yaml.safe_load(form.get("checks_yaml", "[]")) or []
-        if not isinstance(checks_data, list):
-            return None, "Checks YAML must be a list."
-        validation_error = _validate_checks_data(checks_data)
-        if validation_error:
-            return None, validation_error
+        check_count = int(form.get("check_count", "0"))
+        checks = []
+        for i in range(check_count):
+            check_type = form.get(f"check_type_{i}", "").strip()
+            if not check_type:
+                continue
+            check_data: dict[str, Any] = {"type": check_type}
+            if check_type == "llm":
+                instruction = form.get(f"check_instruction_{i}", "").strip()
+                if not instruction:
+                    return None, f"Check {i + 1}: LLM check requires an instruction."
+                check_data["instruction"] = instruction
+            elif check_type == "regex":
+                pattern = form.get(f"check_pattern_{i}", "").strip()
+                if not pattern:
+                    return None, f"Check {i + 1}: Regex check requires a pattern."
+                check_data["pattern"] = pattern
+            elif check_type == "tool_allowlist":
+                tools_str = form.get(f"check_tools_{i}", "").strip()
+                check_data["allowed_tools"] = [t.strip() for t in tools_str.split(",") if t.strip()] if tools_str else []
+            elif check_type == "tool_denylist":
+                tools_str = form.get(f"check_tools_{i}", "").strip()
+                if not tools_str:
+                    return None, f"Check {i + 1}: Tool denylist requires at least one tool."
+                check_data["denied_tools"] = [t.strip() for t in tools_str.split(",") if t.strip()]
+            elif check_type == "model_allowlist":
+                models_str = form.get(f"check_models_{i}", "").strip()
+                if not models_str:
+                    return None, f"Check {i + 1}: Model allowlist requires at least one model."
+                check_data["allowed_models"] = [m.strip() for m in models_str.split(",") if m.strip()]
+            elif check_type == "max_chars":
+                try:
+                    check_data["max_chars"] = int(form.get(f"check_max_chars_{i}", "20000"))
+                except ValueError:
+                    return None, f"Check {i + 1}: Max characters must be a number."
+            checks.append(CheckConfig.model_validate(check_data))
         policy = PolicyConfig(
             id=_clean_policy_id(form.get("id", "")),
             enabled=form.get("enabled") == "on",
@@ -701,9 +731,9 @@ async def _policy_from_form(request: Request, original_id: Optional[str] = None)
             category=form.get("category", "policy").strip() or "policy",
             description=form.get("description", "").strip(),
             action=form.get("action", "block"),
-            checks=[CheckConfig.model_validate(check) for check in checks_data],
+            checks=checks,
         )
-    except (ValidationError, yaml.YAMLError, TypeError, ValueError) as error:
+    except (ValidationError, TypeError, ValueError) as error:
         return None, str(error)
 
     if not policy.id:
@@ -747,12 +777,9 @@ def _clean_policy_id(value: str) -> str:
 
 
 def _policy_form(policy: PolicyConfig, title: str, action_url: str, error: Optional[str] = None, actor: Optional[str] = None) -> str:
-    checks_yaml = yaml.safe_dump(
-        [check.model_dump(exclude_none=True) for check in policy.checks],
-        sort_keys=False,
-        allow_unicode=False,
-    ).strip()
     checked = "checked" if policy.enabled else ""
+    check_rows = "\n".join(_check_row(i, check) for i, check in enumerate(policy.checks))
+    check_count = len(policy.checks)
     body = f"""
       <section class="toolbar">
         <div>
@@ -769,17 +796,89 @@ def _policy_form(policy: PolicyConfig, title: str, action_url: str, error: Optio
         <label>Category<input name="category" value="{escape(policy.category)}"></label>
         <label>Action{_select("action", ["block", "warn"], policy.action)}</label>
         <label>Description<textarea name="description" rows="3">{escape(policy.description)}</textarea></label>
-        <label>Checks YAML<textarea name="checks_yaml" rows="14" spellcheck="false">{escape(checks_yaml)}</textarea></label>
-        <div class="hint">
-          Use <code>type: llm</code> with an <code>instruction</code> for context-aware policy rules.
-          Use <code>type: regex</code> with a <code>pattern</code> for exact deterministic matches.
-        </div>
+        <fieldset class="fieldset">
+          <legend>Checks</legend>
+          <div class="hint">Add one or more checks. LLM checks use context-aware evaluation. Regex checks use pattern matching.</div>
+          <div id="checks-list">{check_rows}</div>
+          <input type="hidden" name="check_count" id="check-count" value="{check_count}">
+          <button type="button" class="button small" onclick="addCheck()" style="margin-top:8px">+ Add Check</button>
+        </fieldset>
         <div class="actions">
           <button class="button primary" type="submit">Save Policy</button>
         </div>
       </form>
+      <script>
+      var checkCount = {check_count};
+      function addCheck() {{
+        var idx = checkCount++;
+        document.getElementById('check-count').value = checkCount;
+        var div = document.createElement('div');
+        div.className = 'pg-adhoc';
+        div.id = 'check-row-' + idx;
+        div.innerHTML = '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px"><select name="check_type_' + idx + '" onchange="checkTypeChanged(' + idx + ')" style="width:120px"><option value="llm">LLM</option><option value="regex">Regex</option><option value="tool_allowlist">Tool Allowlist</option><option value="tool_denylist">Tool Denylist</option><option value="model_allowlist">Model Allowlist</option><option value="max_chars">Max Characters</option></select><button type="button" class="button small danger" onclick="removeCheck(' + idx + ')" style="padding:3px 6px">\\u2715</button></div><div id="check-fields-' + idx + '"><label style="font-size:12px">Instruction<textarea name="check_instruction_' + idx + '" rows="4" placeholder="Describe what this check should detect..."></textarea></label></div>';
+        document.getElementById('checks-list').appendChild(div);
+      }}
+      function removeCheck(idx) {{
+        var el = document.getElementById('check-row-' + idx);
+        if (el) el.remove();
+      }}
+      function checkTypeChanged(idx) {{
+        var type = document.querySelector('select[name=check_type_' + idx + ']').value;
+        var fields = document.getElementById('check-fields-' + idx);
+        if (type === 'llm') {{
+          fields.innerHTML = '<label style="font-size:12px">Instruction<textarea name="check_instruction_' + idx + '" rows="4" placeholder="Describe what this check should detect..."></textarea></label>';
+        }} else if (type === 'regex') {{
+          fields.innerHTML = '<label style="font-size:12px">Pattern<input name="check_pattern_' + idx + '" placeholder="(?i)(pattern|to|match)"></label>';
+        }} else if (type === 'tool_allowlist') {{
+          fields.innerHTML = '<label style="font-size:12px">Allowed Tools (comma-separated)<input name="check_tools_' + idx + '" placeholder="search, calculator"></label>';
+        }} else if (type === 'tool_denylist') {{
+          fields.innerHTML = '<label style="font-size:12px">Denied Tools (comma-separated)<input name="check_tools_' + idx + '" placeholder="shell_exec, delete_file"></label>';
+        }} else if (type === 'model_allowlist') {{
+          fields.innerHTML = '<label style="font-size:12px">Allowed Models (comma-separated)<input name="check_models_' + idx + '" placeholder="gpt-4, gpt-3.5-turbo"></label>';
+        }} else if (type === 'max_chars') {{
+          fields.innerHTML = '<label style="font-size:12px">Max Characters<input name="check_max_chars_' + idx + '" type="number" value="20000" inputmode="numeric"></label>';
+        }}
+      }}
+      </script>
     """
     return _page(title, body, actor)
+
+
+def _check_row(index: int, check: CheckConfig) -> str:
+    check_type = check.type
+    fields_html = ""
+    if check_type == "llm":
+        fields_html = f'<label style="font-size:12px">Instruction<textarea name="check_instruction_{index}" rows="4">{escape(check.instruction or "")}</textarea></label>'
+    elif check_type == "regex":
+        fields_html = f'<label style="font-size:12px">Pattern<input name="check_pattern_{index}" value="{escape(check.pattern or "")}"></label>'
+    elif check_type == "tool_allowlist":
+        tools = ", ".join(check.allowed_tools or [])
+        fields_html = f'<label style="font-size:12px">Allowed Tools (comma-separated)<input name="check_tools_{index}" value="{escape(tools)}"></label>'
+    elif check_type == "tool_denylist":
+        tools = ", ".join(check.denied_tools or [])
+        fields_html = f'<label style="font-size:12px">Denied Tools (comma-separated)<input name="check_tools_{index}" value="{escape(tools)}"></label>'
+    elif check_type == "model_allowlist":
+        models = ", ".join(check.allowed_models or [])
+        fields_html = f'<label style="font-size:12px">Allowed Models (comma-separated)<input name="check_models_{index}" value="{escape(models)}"></label>'
+    elif check_type == "max_chars":
+        fields_html = f'<label style="font-size:12px">Max Characters<input name="check_max_chars_{index}" type="number" value="{check.max_chars or 20000}" inputmode="numeric"></label>'
+
+    type_labels = {"llm": "LLM", "regex": "Regex", "tool_allowlist": "Tool Allowlist", "tool_denylist": "Tool Denylist", "model_allowlist": "Model Allowlist", "max_chars": "Max Characters"}
+    type_options = ""
+    for t in ["llm", "regex", "tool_allowlist", "tool_denylist", "model_allowlist", "max_chars"]:
+        label = type_labels.get(t, t)
+        selected = "selected" if t == check_type else ""
+        type_options += f'<option value="{t}" {selected}>{label}</option>'
+
+    return f"""
+      <div class="pg-adhoc" id="check-row-{index}">
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+          <select name="check_type_{index}" onchange="checkTypeChanged({index})" style="width:120px">{type_options}</select>
+          <button type="button" class="button small danger" onclick="removeCheck({index})" style="padding:3px 6px">&#10005;</button>
+        </div>
+        <div id="check-fields-{index}">{fields_html}</div>
+      </div>
+    """
 
 
 def _policy_row(policy: PolicyConfig, hits: int = 0) -> str:
