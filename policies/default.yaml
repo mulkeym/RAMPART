@@ -1,7 +1,7 @@
 version: 1
 llm_evaluator:
-  enabled: false
-  base_url: http://192.168.1.181:8080/v1
+  enabled: true
+  base_url: http://192.168.1.181:8081/v1
   model: gemma4-e2b
   timeout_seconds: 20.0
   fail_closed_on_error: true
@@ -9,9 +9,9 @@ llm_evaluator:
   confidence_threshold: 0.75
   post_llm_enabled: false
 vision_evaluator:
-  enabled: false
-  base_url: http://192.168.1.181:8081/v1
-  model: ''
+  enabled: true
+  base_url: http://192.168.1.181:8000/v1
+  model: cyankiwi/gemma-4-31B-it-AWQ-8bit
   timeout_seconds: 30.0
   fail_closed_on_error: true
 failure_response:
@@ -28,7 +28,7 @@ tracking:
 upstream:
   enabled: true
   base_url: http://192.168.1.181:8000/v1
-  model: ''
+  model: cyankiwi/gemma-4-31B-it-AWQ-8bit
   api_key: ''
   timeout_seconds: 120.0
 policies:
@@ -185,3 +185,41 @@ policies:
   checks:
   - type: llm
     instruction: Discussion about puppies or kittens is not allowed.
+- id: no-cui
+  enabled: true
+  severity: medium
+  category: policy
+  description: no-cui
+  action: block
+  checks:
+  - type: llm
+    instruction: "The text contains Controlled Unclassified Information (CUI) that\
+      \ the \r\nDefense Health Agency or Department of Defense is required to safeguard\
+      \ \r\nfrom external disclosure. CUI includes: Protected Health Information \r\
+      \nabout identifiable service members, dependents, retirees, or veterans; \r\n\
+      personally identifiable information paired with DoD context such as \r\nEDIPI,\
+      \ rank, or unit; non-public operational, readiness, or force \r\nhealth protection\
+      \ data; procurement, source selection, or contractor \r\nproprietary information\
+      \ not yet publicly released; controlled technical \r\ninformation about DoD\
+      \ systems; and any text bearing explicit CUI \r\nmarkings, legacy markings (FOUO,\
+      \ SBU, LES), or DoD Distribution \r\nStatements B through F. Publicly available\
+      \ DoD information, general \r\nmedical and public health knowledge, de-identified\
+      \ aggregate data, and \r\nthe mere fact that a person works for DoD or DHA are\
+      \ not CUI."
+- id: No-PHI
+  enabled: true
+  severity: medium
+  category: policy
+  description: No-PHI
+  action: block
+  checks:
+  - type: llm
+    instruction: "The text contains Protected Health Information about an identifiable\
+      \ \r\nperson receiving care through the Military Health System, TRICARE, or\
+      \ \r\nthe VA. This includes patient names paired with diagnoses, treatments,\
+      \ \r\nmedications, or dates of service; Department of Defense identifiers \r\
+      \n(EDIPI, DoD ID numbers, sponsor SSN); medical record numbers; or \r\ncombinations\
+      \ of demographic and clinical detail sufficient to identify \r\na specific service\
+      \ member, dependent, retiree, or beneficiary. Generic \r\nmedical questions,\
+      \ public health information, and de-identified \r\naggregate statistics are\
+      \ not PHI."

@@ -18,6 +18,7 @@ CACHE_TTL = 300  # 5 minutes
 CACHE_MAX_SIZE = 1000
 from rampart.app.policy.engine import PolicyEngine
 from rampart.app.tracking import ClientContext, write_evaluation_event
+from rampart.app.discovery import router as discovery_router
 from rampart.app.enrollment import router as enrollment_router
 from rampart.app.extension import router as extension_router
 from rampart.app.mcp_server import router as mcp_router
@@ -44,6 +45,7 @@ app.include_router(ui_router)
 app.include_router(playground_router)
 app.include_router(extension_router)
 app.include_router(enrollment_router)
+app.include_router(discovery_router)
 app.include_router(mcp_router)
 
 

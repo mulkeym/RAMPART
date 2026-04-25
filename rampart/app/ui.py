@@ -1556,6 +1556,8 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
             return "active"
         if label == "Groups" and "group" in t:
             return "active"
+        if label == "Sites" and ("site" in t or "discover" in t):
+            return "active"
         return ""
 
     auth_nav = (
@@ -1566,6 +1568,7 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
         f'<a class="{_nav_class("Violations")}" href="/ui/violations">Violations</a>'
         f'<a class="{_nav_class("Playground")}" href="/ui/playground">Playground</a>'
         f'<a class="{_nav_class("Extension")}" href="/ui/extension">Extension</a>'
+        f'<a class="{_nav_class("Sites")}" href="/ui/sites">Sites</a>'
         f'<a class="{_nav_class("Settings")}" href="/ui/settings">Settings</a>'
         f'</div>'
         f'<form method="post" action="/logout"><span style="color:var(--muted);font-size:13px">{escape(actor)}</span><button type="submit">Log Out</button></form>'
