@@ -152,6 +152,52 @@ The interactive playground at `/ui/playground` lets you:
 
 Policy results display immediately while the LLM response loads asynchronously.
 
+## Chrome Extension
+
+RAMPART includes a Chrome browser extension that intercepts prompts on AI chat
+sites before they're sent, evaluates them against policies, and blocks violations.
+
+**Supported sites:** ChatGPT (chatgpt.com), Ask Sage (chat.asksage.ai)
+
+**Features:**
+- Text and image evaluation (pasted images are captured and sent to RAMPART)
+- Policy violation overlay blocks the prompt and requires user acknowledgment
+- Auto-updating — `content.js` and `styles.css` load from the RAMPART server
+- Group-based enrollment with optional CAC/mTLS identity
+
+### Setup
+
+1. Go to `/ui/extension` in the RAMPART admin UI
+2. Click **Download Extension (.zip)** — the server URL is pre-configured
+3. Unzip and load in Chrome: `chrome://extensions` → Developer mode → Load unpacked
+4. Click the RAMPART icon in the toolbar to enroll
+
+### Enrollment
+
+**Group enrollment (recommended):**
+1. Admin creates a group in `/ui/groups` with assigned policies
+2. Admin shares the group enrollment key with users
+3. User enters the server URL and group key in the extension popup → clicks Enroll
+4. Extension auto-provisions an API key with the group's policies
+
+**Manual setup:**
+1. Admin creates an API key in `/ui/clients`
+2. User enters the server URL and API key in the extension Settings
+
+### CAC-Based Identity (Optional)
+
+For environments with CAC/PIV smart cards, RAMPART can verify user identity
+via mTLS during enrollment:
+
+1. Place server cert and CA cert in `data/certs/` (see `scripts/generate_test_certs.sh`)
+2. Expose port 8443 in Docker
+3. During enrollment, the extension calls the identity server on port 8443
+4. The browser prompts for a client certificate
+5. The SAN from the certificate becomes the client ID
+
+If no certificates are configured, enrollment falls back to Chrome profile
+identity or manual email entry.
+
 ## Vision Evaluator
 
 RAMPART can evaluate image content against policies using a separate vision-capable
