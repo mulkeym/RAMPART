@@ -76,16 +76,13 @@ document.getElementById('enrollBtn').addEventListener('click', async () => {
         let identityResolved = false;
         try {
             const idUrl = url.replace(/:\d+$/, ':8443');
-            const idResp = await fetch(idUrl + '/whoami', { method: 'GET' });
-            if (idResp.ok) {
-                const idData = await idResp.json();
-                if (idData.nonce && idData.identity) {
-                    identityNonce = idData.nonce;
-                    userEmail = idData.san || idData.identity;
-                    userName = idData.cn || idData.identity;
-                    identityResolved = true;
-                    setStatus(status, 'green', 'Identity: ' + (idData.identity || ''));
-                }
+            const idData = await chrome.runtime.sendMessage({ type: 'identityCheck', url: idUrl });
+            if (idData && idData.nonce && idData.identity) {
+                identityNonce = idData.nonce;
+                userEmail = idData.san || idData.identity;
+                userName = idData.cn || idData.identity;
+                identityResolved = true;
+                setStatus(status, 'green', 'Identity: ' + (idData.identity || ''));
             }
         } catch (e) {
             // Identity server not available
@@ -99,18 +96,15 @@ document.getElementById('enrollBtn').addEventListener('click', async () => {
         }
 
         setStatus(status, 'gray', 'Enrolling...');
-        const resp = await fetch(url + '/v1/enroll', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                enrollment_key: groupKey,
-                user_name: userName,
-                user_email: userEmail,
-                device_id: getDeviceId(),
-                identity_nonce: identityNonce
-            })
+        const data = await chrome.runtime.sendMessage({
+            type: 'enroll',
+            url: url,
+            enrollment_key: groupKey,
+            user_name: userName,
+            user_email: userEmail,
+            device_id: getDeviceId(),
+            identity_nonce: identityNonce
         });
-        const data = await resp.json();
         if (data.status === 'enrolled' || data.status === 're-enrolled') {
             chrome.storage.sync.set({
                 rampartUrl: url, apiKey: data.api_key, clientId: data.client_id,
@@ -166,11 +160,11 @@ document.getElementById('testBtn').addEventListener('click', async () => {
     const url = document.getElementById('settings-url').value.replace(/\/+$/, '');
     setStatus(status, 'gray', 'Testing...');
     try {
-        const resp = await fetch(url + '/health');
-        if (resp.ok) {
+        const result = await chrome.runtime.sendMessage({ type: 'healthCheck', url: url });
+        if (result && result.status === 'ok') {
             setStatus(status, 'green', 'Connected');
         } else {
-            setStatus(status, 'red', 'HTTP ' + resp.status);
+            setStatus(status, 'red', result ? (result.error || 'Failed') : 'No response');
         }
     } catch (e) {
         setStatus(status, 'red', e.message);

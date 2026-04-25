@@ -11,6 +11,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
         return true;
     }
+    if (message.type === 'identityCheck') {
+        fetch((message.url || '') + '/whoami', { method: 'GET' })
+            .then(r => r.json())
+            .then(data => sendResponse(data))
+            .catch(() => sendResponse({}));
+        return true;
+    }
+    if (message.type === 'healthCheck') {
+        fetch((message.url || 'http://localhost:8080').replace(/\/+$/, '') + '/health')
+            .then(r => r.json())
+            .then(data => sendResponse(data))
+            .catch(err => sendResponse({ error: err.message }));
+        return true;
+    }
+    if (message.type === 'enroll') {
+        enrollClient(message).then(sendResponse).catch(err => {
+            sendResponse({ error: err.message, message: err.message });
+        });
+        return true;
+    }
     if (message.type === 'sendCaptures') {
         sendCaptures(message.captures).then(sendResponse).catch(err => {
             sendResponse({ error: err.message });
@@ -48,6 +68,22 @@ async function sendCaptures(captures) {
     } catch (e) {
         return { error: e.message };
     }
+}
+
+async function enrollClient(message) {
+    const url = (message.url || 'http://localhost:8080').replace(/\/+$/, '');
+    const resp = await fetch(url + '/v1/enroll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            enrollment_key: message.enrollment_key,
+            user_name: message.user_name,
+            user_email: message.user_email,
+            device_id: message.device_id,
+            identity_nonce: message.identity_nonce || ''
+        })
+    });
+    return await resp.json();
 }
 
 async function evaluatePrompt(prompt, images) {
