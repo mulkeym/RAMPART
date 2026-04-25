@@ -3,7 +3,7 @@
     "name": "RAMPART - Prompt Firewall",
     "version": "0.1.0",
     "description": "Evaluate and sanitize AI prompts before submission using RAMPART policy engine",
-    "permissions": ["storage"],
+    "permissions": ["storage", "<all_urls>"],
     "host_permissions": ["https://chatgpt.com/*", "http://*/*", "https://*/*"],
     "background": {
         "scripts": ["background.js"]
