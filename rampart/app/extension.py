@@ -29,23 +29,34 @@ async def extension_page(request: Request) -> HTMLResponse:
     body = f"""
       <section class="toolbar">
         <div>
-          <h1>Chrome Extension</h1>
-          <p>Intercept and evaluate ChatGPT prompts with RAMPART policies.</p>
+          <h1>Browser Extension</h1>
+          <p>Intercept and evaluate AI prompts with RAMPART policies. Supports Chrome and Firefox.</p>
         </div>
       </section>
       <section class="panel" style="padding:24px">
-        <h2 style="font-size:18px;margin-bottom:16px;color:var(--text)">Setup Instructions</h2>
+        <h2 style="font-size:18px;margin-bottom:16px;color:var(--text)">Chrome / Edge Setup</h2>
         <ol style="color:var(--text-secondary);line-height:2;padding-left:20px">
-          <li>Click the download button below to get the extension ZIP</li>
+          <li>Download the Chrome extension below</li>
           <li>Unzip the downloaded file</li>
           <li>Open Chrome and go to <code>chrome://extensions</code></li>
           <li>Enable <strong>Developer mode</strong> (top right toggle)</li>
           <li>Click <strong>Load unpacked</strong> and select the unzipped folder</li>
-          <li>The RAMPART icon appears in your toolbar &mdash; click it to verify the connection</li>
-          <li>Visit <a href="https://chatgpt.com" target="_blank" style="color:var(--primary)">chatgpt.com</a> and your prompts will be evaluated automatically</li>
         </ol>
-        <div style="margin-top:20px;display:flex;gap:12px;align-items:center">
-          <a class="button primary" href="/ui/extension/download" style="text-decoration:none">Download Extension (.zip)</a>
+        <div style="margin-top:16px;display:flex;gap:12px;align-items:center">
+          <a class="button primary" href="/ui/extension/download" style="text-decoration:none">Download for Chrome (.zip)</a>
+          <span class="muted" style="font-size:12px">Pre-configured for <code>{server_url}</code></span>
+        </div>
+      </section>
+      <section class="panel" style="padding:24px;margin-top:16px">
+        <h2 style="font-size:18px;margin-bottom:16px;color:var(--text)">Firefox Setup</h2>
+        <ol style="color:var(--text-secondary);line-height:2;padding-left:20px">
+          <li>Download the Firefox extension below</li>
+          <li>Unzip the downloaded file</li>
+          <li>Open Firefox and go to <code>about:debugging#/runtime/this-firefox</code></li>
+          <li>Click <strong>Load Temporary Add-on</strong> and select <code>manifest.json</code> inside the unzipped folder</li>
+        </ol>
+        <div style="margin-top:16px;display:flex;gap:12px;align-items:center">
+          <a class="button primary" href="/ui/extension/download/firefox" style="text-decoration:none">Download for Firefox (.zip)</a>
           <span class="muted" style="font-size:12px">Pre-configured for <code>{server_url}</code></span>
         </div>
       </section>
@@ -79,6 +90,42 @@ async def download_extension(request: Request):
         buf,
         media_type="application/zip",
         headers={"Content-Disposition": "attachment; filename=rampart-extension.zip"},
+    )
+
+
+@router.get("/ui/extension/download/firefox")
+async def download_extension_firefox(request: Request):
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+
+    server_url = f"{request.url.scheme}://{request.headers.get('host', 'localhost:8080')}"
+    firefox_manifest = EXTENSION_DIR / "manifest.firefox.json"
+    if not firefox_manifest.exists():
+        return Response("Firefox manifest not found", status_code=404)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for file_path in sorted(EXTENSION_DIR.rglob('*')):
+            if file_path.is_file():
+                rel_path = file_path.relative_to(EXTENSION_DIR)
+                # Skip Chrome manifest and Firefox-specific manifest source
+                if rel_path.name == 'manifest.json' or rel_path.name == 'manifest.firefox.json':
+                    continue
+                content = file_path.read_bytes()
+                if rel_path.name == 'popup.js':
+                    content = content.replace(
+                        b"'http://localhost:8080'",
+                        f"'{server_url}'".encode()
+                    )
+                zf.writestr(f"rampart-extension-firefox/{rel_path}", content)
+        # Use the Firefox manifest as manifest.json
+        zf.writestr("rampart-extension-firefox/manifest.json", firefox_manifest.read_bytes())
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=rampart-extension-firefox.zip"},
     )
 
 
