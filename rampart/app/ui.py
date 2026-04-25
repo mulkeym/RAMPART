@@ -348,32 +348,33 @@ async def clients_index(request: Request, message: Optional[str] = None, api_key
     body = f"""
       <section class="toolbar">
         <div>
-          <h1>API Keys</h1>
+          <h1>Clients</h1>
           <p>{escape(get_config().clients.path)}</p>
         </div>
         <a class="button primary" href="/ui/clients/new">New API Key</a>
       </section>
       {_notice(message, None)}
       {key_notice}
-      <section class="panel">
-        <table>
+      <section class="panel" style="overflow-x:auto">
+        <table class="sortable">
           <thead>
             <tr>
-              <th>Client ID</th>
-              <th>Customer</th>
-              <th>App</th>
-              <th>Owner</th>
-              <th>Status</th>
-              <th>Tokens</th>
-              <th>Last Used</th>
+              <th data-sort="str">Owner</th>
+              <th data-sort="str">Group</th>
+              <th data-sort="str">Client ID</th>
+              <th data-sort="str">Customer</th>
+              <th data-sort="str">App</th>
+              <th data-sort="str">Status</th>
+              <th data-sort="num">Tokens</th>
+              <th data-sort="str">Last Used</th>
               <th></th>
             </tr>
           </thead>
-          <tbody>{rows or _empty_row(8, "No API keys have been created yet.")}</tbody>
+          <tbody>{rows or _empty_row(9, "No clients have been created yet.")}</tbody>
         </table>
       </section>
     """
-    return HTMLResponse(_page("RAMPART API Keys", body, read_session_user(request)))
+    return HTMLResponse(_page("RAMPART Clients", body, read_session_user(request)))
 
 
 @router.get("/ui/clients/new", response_class=HTMLResponse)
@@ -909,15 +910,18 @@ def _client_row(client: ClientRecord) -> str:
     toggle_label = "Disable" if client.enabled else "Enable"
     toggle_class = "button small danger" if client.enabled else "button small success"
     owner = client.owner_email or client.owner_name
+    group = client.group_id or ""
+    total_tokens = client.total_prompt_tokens + client.total_completion_tokens
     return f"""
       <tr>
-        <td><code>{escape(client.id)}</code><div class="muted">{escape(client.group_id or client.team)}</div></td>
+        <td>{escape(owner)}</td>
+        <td>{escape(group)}</td>
+        <td><code>{escape(client.id)}</code></td>
         <td>{escape(client.customer)}</td>
         <td>{escape(client.app_name)}<div class="muted">{escape(client.environment)}</div></td>
-        <td>{escape(owner)}</td>
         <td><span class="pill {status}">{status}</span></td>
-        <td><span style="font-size:12px">{_format_tokens(client.total_prompt_tokens + client.total_completion_tokens)}</span><div class="muted" style="font-size:10px">{client.total_requests} proxy &middot; {_format_tokens(client.total_prompt_tokens)} in &middot; {_format_tokens(client.total_completion_tokens)} out</div><div class="muted" style="font-size:10px">{client.total_evaluations} evals &middot; <span style="color:{'var(--danger)' if client.total_violations > 0 else 'var(--muted)'}">{client.total_violations} violations</span></div></td>
-        <td><code>{escape(client.last_used_at or "")}</code></td>
+        <td><span style="font-size:12px">{_format_tokens(total_tokens)}</span><div class="muted" style="font-size:10px">{client.total_evaluations} evals &middot; <span style="color:{'var(--danger)' if client.total_violations > 0 else 'var(--muted)'}">{client.total_violations} violations</span></div></td>
+        <td><code style="font-size:11px">{escape(client.last_used_at or "")}</code></td>
         <td class="row-actions">
           <a class="button small" href="/ui/clients/{escape(client.id)}">Edit</a>
           <form class="confirm-action" method="post" action="/ui/clients/{escape(client.id)}/toggle" data-confirm-title="{toggle_label} Client?" data-confirm-message="Are you sure you want to {toggle_label.lower()} client {escape(client.id)}?">
@@ -1313,7 +1317,7 @@ def _policy_stats_cards(config, events: list) -> str:
           <div class="stat-sub success">{enabled_policies} enabled</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label">API Keys</div>
+          <div class="stat-label">Clients</div>
           <div class="stat-value">{total_clients}</div>
           <div class="stat-sub success">{active_clients} active</div>
         </div>
@@ -1544,7 +1548,7 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
         t = title.lower()
         if label == "Policies" and "polic" in t:
             return "active"
-        if label == "API Keys" and ("api key" in t or "client" in t):
+        if label == "Clients" and ("api key" in t or "client" in t):
             return "active"
         if label == "Violations" and "violation" in t:
             return "active"
@@ -1563,7 +1567,7 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
     auth_nav = (
         f'<div class="nav-links">'
         f'<a class="{_nav_class("Policies")}" href="/ui/policies">Policies</a>'
-        f'<a class="{_nav_class("API Keys")}" href="/ui/clients">API Keys</a>'
+        f'<a class="{_nav_class("Clients")}" href="/ui/clients">Clients</a>'
         f'<a class="{_nav_class("Groups")}" href="/ui/groups">Groups</a>'
         f'<a class="{_nav_class("Violations")}" href="/ui/violations">Violations</a>'
         f'<a class="{_nav_class("Playground")}" href="/ui/playground">Playground</a>'
