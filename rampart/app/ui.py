@@ -456,6 +456,7 @@ async def update_client_route(client_id: str, request: Request) -> HTMLResponse:
     existing.notes = form.get("notes", "").strip()
     existing.policy_ids = _selected_policy_ids(form)
     existing.enabled = form.get("enabled") == "on"
+    existing.discovery_enabled = form.get("discovery_enabled") == "on"
     if not existing.customer or not existing.app_name:
         return HTMLResponse(_client_form(existing, f"Edit {client_id}", f"/ui/clients/{client_id}", "Customer and app name are required.", actor), status_code=400)
     update_client(existing, get_config().clients.path)
@@ -1172,6 +1173,8 @@ def _client_form(client: Optional[ClientRecord], title: str, action_url: str, er
           <label>Timeout Seconds<input name="upstream_timeout_seconds" value="{get_value("upstream_timeout_seconds")}" inputmode="decimal"></label>
         </fieldset>
         <label class="checkbox"><input type="checkbox" name="enabled" {enabled}> Enabled</label>
+        <label class="checkbox"><input type="checkbox" name="discovery_enabled" {"checked" if (client.discovery_enabled if client else False) else ""}> Discovery Mode</label>
+        <div class="hint" style="margin-top:-8px">When enabled, the extension captures all POST requests on unknown sites for endpoint discovery.</div>
         {_client_policy_section(client, is_group_member, policy_checkboxes)}
         <label>Notes<textarea name="notes" rows="4">{get_value("notes")}</textarea></label>
         <div class="actions"><button class="button primary" type="submit">Save</button></div>

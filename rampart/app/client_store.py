@@ -39,6 +39,7 @@ class ClientRecord(BaseModel):
     total_requests: int = 0
     total_evaluations: int = 0
     total_violations: int = 0
+    discovery_enabled: bool = False
 
 
 class ClientStore(BaseModel):
