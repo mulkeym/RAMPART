@@ -28,6 +28,27 @@ docker run -d -p 8080:8080 -p 8443:8443 --name rampart \
   ghcr.io/mulkeym/rampart:latest
 ```
 
+### Environment Variables in Docker
+
+Pass environment variables with `-e` flags. For production deployments, set a
+fixed session secret so sessions survive container restarts, and optionally
+pre-configure the admin password:
+
+```bash
+docker run -d -p 8080:8080 --name rampart \
+  -v /opt/rampart/data:/app/data \
+  -v /opt/rampart/logs:/app/logs \
+  -v /opt/rampart/policies:/app/policies \
+  -e RAMPART_SESSION_SECRET='replace-with-a-long-random-secret' \
+  -e RAMPART_ADMIN_PASSWORD_HASH='pbkdf2_sha256$...' \
+  ghcr.io/mulkeym/rampart:latest
+```
+
+> **Note:** If `RAMPART_SESSION_SECRET` is not set, the entrypoint auto-generates
+> a random secret at container startup. This is sufficient for normal use but the
+> secret will change on every restart, invalidating active sessions. For a stable
+> deployment, set it explicitly.
+
 | Port | Service | Purpose |
 |------|---------|---------|
 | `8080` | Main app (HTTP) | UI, API, playground, MCP, extension download |
@@ -244,7 +265,7 @@ to `data/settings.json`.
 | `RAMPART_POLICY_FILE` | Path to policy YAML file |
 | `RAMPART_ADMIN_USERNAME` | Admin username (default: `admin`) |
 | `RAMPART_ADMIN_PASSWORD_HASH` | Admin password hash (disables UI password changes) |
-| `RAMPART_SESSION_SECRET` | Session signing secret |
+| `RAMPART_SESSION_SECRET` | Session signing secret (auto-generated if not set) |
 | `RAMPART_AUDIT_LOG` | Audit log path |
 | `RAMPART_MCP_ADMIN_KEY` | MCP admin API key |
 | `RAMPART_UPSTREAM_ENABLED` | Enable/disable upstream LLM proxying |
