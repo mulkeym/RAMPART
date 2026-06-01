@@ -17,6 +17,7 @@ class ClientContext(BaseModel):
     client_id: str = "default-client"
     owner: Optional[str] = None
     request_id: Optional[str] = None
+    user: Optional[str] = None
 
 
 class CustomerSummary(BaseModel):
@@ -57,6 +58,7 @@ def write_evaluation_event(
         "client_id": client.client_id,
         "owner": client.owner,
         "request_id": client.request_id,
+        "user": client.user,
         "decision": response.decision,
         "applied_policies": applied_policies,
         "violations": [

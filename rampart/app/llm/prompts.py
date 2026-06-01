@@ -3,8 +3,9 @@ from __future__ import annotations
 from rampart.app.config import CheckConfig, PolicyConfig
 
 
-def build_policy_check_prompt(request_json: str, policy: PolicyConfig, check: CheckConfig) -> str:
+def build_policy_check_prompt(request_json: str, policy: PolicyConfig, check: CheckConfig, user: str | None = None) -> str:
     plain_text_rule = check.instruction or policy.description
+    user_line = f"\nEnd-User ID: {user}" if user else ""
     return f"""You are RAMPART, a strict API request firewall evaluator.
 
 Evaluate the OpenAI-compatible API request against exactly one policy.
@@ -13,14 +14,15 @@ Policy ID: {policy.id}
 Severity: {policy.severity}
 Category: {policy.category}
 Action: {policy.action}
-Description: {policy.description}
+Description: {policy.description}{user_line}
 
 Plain-text policy rule:
 {plain_text_rule}
 
 Apply the plain-text policy rule to the request context. Consider user messages,
-system messages, tool definitions, requested tool calls, and the apparent intent
-of the request. Do not require exact keyword matches. If the request violates
+system messages, tool definitions, requested tool calls, the end-user identity
+(if provided), and the apparent intent of the request.
+Do not require exact keyword matches. If the request violates
 the rule by meaning or context, mark it as a violation.
 
 Note: Requests may contain "[base64 image omitted]" placeholders where images were

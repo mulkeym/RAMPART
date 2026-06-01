@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from rampart.app.client_store import ClientRecord, client_context_from_record, record_evaluation, record_token_usage, resolve_client_from_api_key
 from rampart.app.config import AppConfig, PolicyConfig, UpstreamConfig, get_config
 from rampart.app.models import EvaluationRequest, EvaluationResponse, HealthResponse
+from rampart.app.openai.compat import extract_user
 from rampart.app.openai.proxy import openai_policy_error, proxy_chat_completion, proxy_chat_completion_stream
 
 # Evaluation cache: hash(prompt + policy_ids) -> (EvaluationResponse, timestamp)
@@ -61,7 +62,7 @@ async def evaluate(payload: EvaluationRequest, request: Request) -> EvaluationRe
     policies = _resolve_policies(config, client_record)
     engine = PolicyEngine(config, policies)
     response = await engine.evaluate(payload.request)
-    _track_evaluation(config, request, response, client_record, policies)
+    _track_evaluation(config, request, response, client_record, policies, user=extract_user(payload.request))
     if client_record:
         record_evaluation(client_record.id, len(response.violations), config.clients.path)
     return response
@@ -83,7 +84,7 @@ async def evaluate_chat_completions(payload: dict[str, Any], request: Request):
         response = await engine.evaluate(payload)
         _set_cached_eval(cache_key, response)
 
-    _track_evaluation(config, request, response, client_record, policies)
+    _track_evaluation(config, request, response, client_record, policies, user=extract_user(payload))
     if client_record:
         record_evaluation(client_record.id, len(response.violations), config.clients.path)
     blocking_violations = _blocking_violations(response, policies)
@@ -181,12 +182,13 @@ def _apply_model_override(payload: dict[str, Any], model: str) -> dict[str, Any]
     return updated
 
 
-def _track_evaluation(config, request: Request, response: EvaluationResponse, client_record: Optional[ClientRecord], policies: list[PolicyConfig]) -> None:
+def _track_evaluation(config, request: Request, response: EvaluationResponse, client_record: Optional[ClientRecord], policies: list[PolicyConfig], user: Optional[str] = None) -> None:
     fallback = ClientContext(
         customer=request.headers.get("x-rampart-customer", "default"),
         client_id=request.headers.get("x-rampart-client-id", "default-client"),
         owner=request.headers.get("x-rampart-owner"),
         request_id=request.headers.get("x-request-id"),
+        user=user,
     )
     client = client_context_from_record(client_record, fallback)
     applied_policies = [policy.id for policy in policies if policy.enabled]

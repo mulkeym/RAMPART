@@ -206,7 +206,7 @@ def client_context_from_record(client: Optional[ClientRecord], fallback: ClientC
     if client is None:
         return fallback
     owner = client.owner_email or client.owner_name or None
-    return ClientContext(customer=client.customer, client_id=client.id, owner=owner, request_id=fallback.request_id)
+    return ClientContext(customer=client.customer, client_id=client.id, owner=owner, request_id=fallback.request_id, user=fallback.user)
 
 
 def _strip_bearer(value: str) -> str:

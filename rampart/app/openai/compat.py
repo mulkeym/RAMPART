@@ -31,3 +31,8 @@ def extract_tool_names(request: dict[str, Any]) -> list[str]:
 def extract_model(request: dict[str, Any]) -> Optional[str]:
     model = request.get("model")
     return model if isinstance(model, str) else None
+
+
+def extract_user(request: dict[str, Any]) -> Optional[str]:
+    user = request.get("user")
+    return user if isinstance(user, str) else None
