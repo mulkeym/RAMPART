@@ -1330,12 +1330,12 @@
   <h4>Example: Ask Sage User Evaluation</h4>
   <div style="font-size:0.82rem; color:var(--text-dim); line-height:1.7;">
     <p><strong>1.</strong> Ask Sage sends a prompt to RAMPART with API key <code>Bearer ask-sage-key</code> and <code>"user": "jsmith@dha.mil"</code></p>
-    <p><strong>2.</strong> RAMPART authenticates the API key &rarr; resolves to client <code>as-sage</code> (baseline policies: all enabled)</p>
+    <p><strong>2.</strong> RAMPART authenticates the API key &rarr; resolves to client <code>ask-sage</code> (baseline policies: all enabled)</p>
     <p><strong>3.</strong> User Group Resolver looks up <code>jsmith@dha.mil</code> in Keycloak &rarr; returns groups <code>[DHA-Clinical, DHA-Admin]</code></p>
     <p><strong>4.</strong> Group Mappings: <code>DHA-Clinical &rarr; clinical-staff</code>, <code>DHA-Admin &rarr; admin-unrestricted</code></p>
     <p><strong>5.</strong> <code>clinical-staff</code> has policies <code>[no-pii, hipaa-compliance]</code>; <code>admin-unrestricted</code> has <code>[prompt-injection-defense]</code></p>
     <p><strong>6.</strong> Union: prompt is evaluated against <code>[no-pii, hipaa-compliance, prompt-injection-defense]</code></p>
-    <p><strong>7.</strong> If Keycloak was unreachable, RAMPART would fall back to client <code>as-sage</code>'s baseline policies instead</p>
+    <p><strong>7.</strong> If Keycloak was unreachable, RAMPART would fall back to client <code>ask-sage</code>'s baseline policies instead</p>
   </div>
 </div>
 
