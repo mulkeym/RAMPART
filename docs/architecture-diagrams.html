@@ -344,6 +344,7 @@
   <button data-tab="pipeline">Evaluation Pipeline</button>
   <button data-tab="enrollment">Extension Enrollment</button>
   <button data-tab="detailed">Detailed Swim Lane</button>
+  <button data-tab="policy-resolution">Policy Resolution</button>
 </nav>
 
 <!-- ================================================================ -->
@@ -1195,6 +1196,146 @@
     <div class="legend-item"><div class="legend-swatch" style="background:var(--green);"></div>RAMPART Server (evaluation pipeline)</div>
     <div class="legend-item"><div class="legend-swatch" style="background:var(--purple);"></div>Logging &amp; Persistence</div>
     <div class="legend-item"><div class="legend-swatch" style="background:var(--orange);"></div>External LLM / Decision Points</div>
+  </div>
+</div>
+
+</div>
+
+<!-- ================================================================ -->
+<!-- TAB 5: POLICY RESOLUTION FLOW                                    -->
+<!-- ================================================================ -->
+<div class="tab-panel" id="policy-resolution">
+<p class="swim-intro">
+  How RAMPART determines which policies to apply for each request &mdash; from API key through user identity, group membership, and policy assignment.
+</p>
+
+<div class="swim" style="grid-template-columns: 260px 260px 1fr;">
+  <!-- Column Headers -->
+  <div class="swim-head" style="color:var(--blue); border-bottom-color:var(--blue);">Request Arrives</div>
+  <div class="swim-head" style="color:var(--teal); border-bottom-color:var(--teal);">Identity Resolution</div>
+  <div class="swim-head" style="color:var(--green); border-bottom-color:var(--green);">Policy Selection</div>
+
+  <!-- ============================================================ -->
+  <div class="swim-phase" style="color:var(--blue);">Step 1 &mdash; Client Authentication</div>
+  <!-- ============================================================ -->
+
+  <div class="swim-cell"><div class="swim-card u">
+    <h4>API Request</h4>
+    <p>Request arrives at <code>/v1/rampart/evaluate</code> or <code>/v1/chat/completions</code> with:</p>
+    <div><span class="sub">Authorization: Bearer &lt;api_key&gt;</span></div>
+    <div><span class="sub">"user": "jsmith@dha.mil"</span></div>
+  </div></div>
+  <div class="swim-cell"><div class="swim-card e">
+    <h4>Resolve Client</h4>
+    <p>Match the Bearer token against PBKDF2 key_hash store in <code>clients.json</code>. Returns the <code>ClientRecord</code> with:</p>
+    <div><span class="sub">client.id</span><span class="sub">client.group_id</span><span class="sub">client.policy_ids</span></div>
+  </div></div>
+  <div class="swim-cell"></div>
+
+  <!-- ============================================================ -->
+  <div class="swim-phase" style="color:var(--teal);">Step 2 &mdash; User Group Resolution (if enabled)</div>
+  <!-- ============================================================ -->
+
+  <div class="swim-cell"><div class="swim-card u">
+    <h4>Extract User Field</h4>
+    <p>The OpenAI <code>"user"</code> field (email) is extracted from the request payload.</p>
+    <p style="margin-top:4px;">e.g. <code>jsmith@dha.mil</code></p>
+  </div></div>
+  <div class="swim-cell"><div class="swim-card e">
+    <h4>External Group Lookup</h4>
+    <p>If User Group Resolver is <strong>enabled</strong>, query the identity provider (Keycloak / AD / PingFederate) for the user's group memberships.</p>
+    <div><span class="sub">Check in-memory cache (TTL)</span></div>
+    <div><span class="sub">Cache miss &rarr; provider API call</span></div>
+    <p style="margin-top:6px;">Returns external groups:</p>
+    <div><span class="sub">DHA-Clinical</span><span class="sub">DHA-Admin</span></div>
+  </div></div>
+  <div class="swim-cell"><div class="swim-card s">
+    <h4>Map to RAMPART Groups</h4>
+    <p>Look up external group names in the <strong>Group Mappings</strong> table (<code>group_mappings.json</code>):</p>
+    <div style="margin:8px 0; font-size:0.78rem;">
+      <div style="display:flex;gap:4px;align-items:center;margin:4px 0;">
+        <span class="sub">DHA-Clinical</span> <span style="color:var(--orange);">&rarr;</span> <span class="sub">clinical-staff</span>
+      </div>
+      <div style="display:flex;gap:4px;align-items:center;margin:4px 0;">
+        <span class="sub">DHA-Admin</span> <span style="color:var(--orange);">&rarr;</span> <span class="sub">admin-unrestricted</span>
+      </div>
+    </div>
+    <p>Each RAMPART group has assigned policies. The <strong>union</strong> of all matched groups' policies is used.</p>
+  </div></div>
+
+  <!-- ============================================================ -->
+  <div class="swim-phase" style="color:var(--green);">Step 3 &mdash; Policy Selection (Precedence)</div>
+  <!-- ============================================================ -->
+
+  <div class="swim-cell"></div>
+  <div class="swim-cell"></div>
+  <div class="swim-cell"><div class="swim-card dec" style="border-left-color:var(--orange); text-align:left;">
+    <h4 style="color:var(--orange); text-align:center;">Policy Resolution Precedence</h4>
+    <div style="margin-top:8px;">
+      <div style="display:flex;gap:8px;align-items:flex-start;margin:10px 0;padding:10px;background:rgba(63,185,80,0.08);border-radius:6px;border:1px solid var(--green-border);">
+        <strong style="color:var(--green);white-space:nowrap;">1. User Groups</strong>
+        <p>If the <code>user</code> field is present, the resolver is enabled, and group mappings match &mdash; use the <strong>union of all mapped RAMPART groups' policies</strong>. This <em>replaces</em> the API key baseline.</p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-start;margin:10px 0;padding:10px;background:rgba(56,139,253,0.08);border-radius:6px;border:1px solid var(--blue-border);">
+        <strong style="color:var(--blue);white-space:nowrap;">2. Client Group</strong>
+        <p>If no user resolution (disabled, failed, or no match), check if the client has a <code>group_id</code>. If so, use that RAMPART group's policies.</p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-start;margin:10px 0;padding:10px;background:rgba(188,140,255,0.08);border-radius:6px;border:1px solid var(--purple-border);">
+        <strong style="color:var(--purple);white-space:nowrap;">3. Direct Assignment</strong>
+        <p>If the client has no group, use the client's directly assigned <code>policy_ids</code> list.</p>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-start;margin:10px 0;padding:10px;background:rgba(139,148,158,0.08);border-radius:6px;border:1px solid rgba(139,148,158,0.25);">
+        <strong style="color:var(--text-dim);white-space:nowrap;">4. All Enabled</strong>
+        <p>If the client has no group and no direct policies, fall back to <strong>all enabled policies</strong> in the system.</p>
+      </div>
+    </div>
+  </div></div>
+
+  <!-- ============================================================ -->
+  <div class="swim-phase" style="color:var(--orange);">Step 4 &mdash; Evaluate Against Resolved Policies</div>
+  <!-- ============================================================ -->
+
+  <div class="swim-cell"></div>
+  <div class="swim-cell"></div>
+  <div class="swim-cell"><div class="swim-card s">
+    <h4>Policy Engine</h4>
+    <p>The resolved policy list is passed to the PolicyEngine which runs:</p>
+    <div><span class="sub">Deterministic checks (regex, tools, model, size)</span></div>
+    <div><span class="sub">LLM evaluation (if no deterministic block)</span></div>
+    <div><span class="sub">Vision evaluation (parallel with LLM)</span></div>
+    <p style="margin-top:6px;">Returns: <code>decision</code> (accept/fail) + <code>violations[]</code></p>
+  </div></div>
+
+  <!-- ============================================================ -->
+  <div class="swim-phase" style="color:var(--purple);">Step 5 &mdash; Log &amp; Track</div>
+  <!-- ============================================================ -->
+
+  <div class="swim-cell"></div>
+  <div class="swim-cell"></div>
+  <div class="swim-cell"><div class="swim-card log">
+    <h4>Prompt Log Entry</h4>
+    <p>Every evaluation is logged with full context:</p>
+    <div>
+      <span class="sub">user identity</span><span class="sub">client_id</span>
+      <span class="sub">resolved external groups</span><span class="sub">mapped RAMPART groups</span>
+      <span class="sub">per-policy pass/fail</span><span class="sub">full prompt content</span>
+      <span class="sub">decision + violations</span><span class="sub">eval timing</span>
+    </div>
+    <p style="margin-top:6px;">Forwarded to syslog/Splunk in CEF format if enabled.</p>
+  </div></div>
+</div>
+
+<!-- Example walkthrough -->
+<div class="legend" style="max-width:860px;">
+  <h4>Example: Ask Sage User Evaluation</h4>
+  <div style="font-size:0.82rem; color:var(--text-dim); line-height:1.7;">
+    <p><strong>1.</strong> Ask Sage sends a prompt to RAMPART with API key <code>Bearer ask-sage-key</code> and <code>"user": "jsmith@dha.mil"</code></p>
+    <p><strong>2.</strong> RAMPART authenticates the API key &rarr; resolves to client <code>as-sage</code> (baseline policies: all enabled)</p>
+    <p><strong>3.</strong> User Group Resolver looks up <code>jsmith@dha.mil</code> in Keycloak &rarr; returns groups <code>[DHA-Clinical, DHA-Admin]</code></p>
+    <p><strong>4.</strong> Group Mappings: <code>DHA-Clinical &rarr; clinical-staff</code>, <code>DHA-Admin &rarr; admin-unrestricted</code></p>
+    <p><strong>5.</strong> <code>clinical-staff</code> has policies <code>[no-pii, hipaa-compliance]</code>; <code>admin-unrestricted</code> has <code>[prompt-injection-defense]</code></p>
+    <p><strong>6.</strong> Union: prompt is evaluated against <code>[no-pii, hipaa-compliance, prompt-injection-defense]</code></p>
+    <p><strong>7.</strong> If Keycloak was unreachable, RAMPART would fall back to client <code>as-sage</code>'s baseline policies instead</p>
   </div>
 </div>
 
