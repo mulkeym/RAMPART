@@ -90,6 +90,24 @@ class PolicyConfig(BaseModel):
     checks: list[CheckConfig] = Field(default_factory=list)
 
 
+class KeycloakConfig(BaseModel):
+    base_url: str = ""
+    realm: str = ""
+    client_id: str = ""
+    client_secret: str = ""
+
+
+class UserGroupResolverConfig(BaseModel):
+    enabled: bool = False
+    provider: str = "keycloak"
+    cache_ttl_seconds: int = 900
+    cache_max_size: int = 20000
+    cache_persist_interval_seconds: int = 60
+    cache_path: str = "data/user_group_cache.json"
+    mappings_path: str = "data/group_mappings.json"
+    keycloak: KeycloakConfig = Field(default_factory=KeycloakConfig)
+
+
 class AppConfig(BaseModel):
     version: int = 1
     llm_evaluator: LlmEvaluatorConfig = Field(default_factory=LlmEvaluatorConfig)
@@ -101,6 +119,7 @@ class AppConfig(BaseModel):
     tracking: TrackingConfig = Field(default_factory=TrackingConfig)
     upstream: UpstreamConfig = Field(default_factory=UpstreamConfig)
     policies: list[PolicyConfig] = Field(default_factory=list)
+    user_group_resolver: UserGroupResolverConfig = Field(default_factory=UserGroupResolverConfig)
 
 
 def default_policy_path() -> Path:
@@ -160,6 +179,11 @@ def _apply_env_overrides(config: AppConfig) -> None:
     vision = config.vision_evaluator
     vision.base_url = os.getenv("RAMPART_VISION_EVALUATOR_BASE_URL", vision.base_url)
     vision.model = os.getenv("RAMPART_VISION_EVALUATOR_MODEL", vision.model)
+    resolver = config.user_group_resolver
+    resolver.keycloak.base_url = os.getenv("RAMPART_KEYCLOAK_BASE_URL", resolver.keycloak.base_url)
+    resolver.keycloak.realm = os.getenv("RAMPART_KEYCLOAK_REALM", resolver.keycloak.realm)
+    resolver.keycloak.client_id = os.getenv("RAMPART_KEYCLOAK_CLIENT_ID", resolver.keycloak.client_id)
+    resolver.keycloak.client_secret = os.getenv("RAMPART_KEYCLOAK_CLIENT_SECRET", resolver.keycloak.client_secret)
 
 
 def _env_bool(name: str, default: bool) -> bool:
