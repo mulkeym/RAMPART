@@ -459,10 +459,15 @@ async def download_backup(request: Request):
         backup_files.extend([GROUP_STORE_PATH, SITE_STORE_PATH])
 
         from pathlib import Path
+        cwd = Path.cwd()
         for filepath in backup_files:
             p = Path(filepath)
             if p.exists():
-                zf.write(p, p.as_posix())
+                try:
+                    arcname = p.resolve().relative_to(cwd.resolve()).as_posix()
+                except ValueError:
+                    arcname = p.name
+                zf.write(p, arcname)
     buf.seek(0)
     audit_event(request, "settings.backup", actor=read_session_user(request), result="success")
     return StreamingResponse(
