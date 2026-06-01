@@ -366,6 +366,51 @@ def _build_messages(form: dict[str, str]) -> list[dict[str, Any]]:
     return messages
 
 
+def _build_openai_request(form: dict[str, str]) -> dict[str, Any]:
+    """Build an OpenAI-compatible request dict based on the selected scenario template."""
+    scenario = form.get("scenario_type", "prompt")
+
+    if scenario == "raw_json":
+        raw = form.get("raw_json", "").strip()
+        try:
+            request = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON: {e}")
+        if not isinstance(request, dict) or "messages" not in request:
+            raise ValueError("Request must include a messages array")
+        return request
+
+    messages = _build_messages(form)
+    request: dict[str, Any] = {"messages": messages}
+
+    model_override = form.get("model_override", "").strip()
+    if model_override:
+        request["model"] = model_override
+
+    user_field = form.get("user_field", "").strip()
+    if user_field:
+        request["user"] = user_field
+
+    if scenario == "tools":
+        tool_names_raw = form.get("tool_names", "").strip()
+        if tool_names_raw:
+            names = [n.strip() for n in tool_names_raw.split(",") if n.strip()]
+            if names:
+                request["tools"] = [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "description": "",
+                            "parameters": {"type": "object", "properties": {}},
+                        },
+                    }
+                    for name in names
+                ]
+
+    return request
+
+
 def _resolve_selected_policies(config, form: dict[str, str]) -> list[PolicyConfig]:
     selected: list[PolicyConfig] = []
     for policy in config.policies:
