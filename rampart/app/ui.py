@@ -2005,7 +2005,8 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
     .login h1 {{ color: var(--primary); }}
     .pg-layout {{ display: flex; flex-direction: column; gap: 18px; }}
     .pg-input {{ display: flex; gap: 16px; }}
-    .pg-messages {{ flex: 3; display: flex; flex-direction: column; gap: 10px; min-width: 0; }}
+    .pg-input-left {{ flex: 3; display: flex; flex-direction: column; gap: 0; min-width: 0; }}
+    .pg-messages {{ display: flex; flex-direction: column; gap: 10px; min-width: 0; }}
     .pg-policies {{ flex: 2; display: flex; flex-direction: column; align-items: stretch; min-width: 0; }}
     .pg-msg-row {{ display: flex; gap: 8px; align-items: flex-start; }}
     .pg-msg-role {{ width: 100px; flex-shrink: 0; }}

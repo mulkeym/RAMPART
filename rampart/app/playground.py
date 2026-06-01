@@ -51,6 +51,7 @@ def _playground_page(config, actor: Optional[str], results_html: str = "") -> st
           </select>
         </div>
         <div class="pg-input">
+          <div class="pg-input-left">
           <div class="pg-messages panel" style="padding:16px">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
               <label style="font-size:14px;font-weight:700;color:var(--text)">Messages</label>
@@ -102,6 +103,7 @@ def _playground_page(config, actor: Optional[str], results_html: str = "") -> st
               <textarea name="raw_json" rows="18" style="width:100%;font-family:monospace;font-size:12px;line-height:1.5;background:var(--bg-primary);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:12px;resize:vertical">{_raw_json_template()}</textarea>
               <div class="hint" style="margin-top:6px">Edit the full OpenAI-compatible request. Includes model, user, messages, and tools. RAMPART evaluates everything.</div>
             </div>
+          </div>
           </div>
           <div class="pg-policies panel" style="padding:16px;text-align:left">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
