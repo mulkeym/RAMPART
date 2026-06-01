@@ -28,6 +28,14 @@ class RuntimeSettings(BaseModel):
     upstream_model: str = ""
     upstream_api_key: str = ""
     upstream_timeout_seconds: Optional[float] = None
+    # User Group Resolver
+    user_group_resolver_enabled: Optional[bool] = None
+    user_group_resolver_provider: str = ""
+    user_group_resolver_cache_ttl_seconds: Optional[int] = None
+    user_group_resolver_keycloak_base_url: str = ""
+    user_group_resolver_keycloak_realm: str = ""
+    user_group_resolver_keycloak_client_id: str = ""
+    user_group_resolver_keycloak_client_secret: str = ""
 
 
 def load_settings(path: str) -> RuntimeSettings:

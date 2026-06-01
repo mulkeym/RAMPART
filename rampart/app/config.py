@@ -235,3 +235,17 @@ def _apply_local_settings(config: AppConfig) -> None:
         config.vision_evaluator.model = settings.vision_evaluator_model
     if settings.vision_evaluator_timeout_seconds is not None:
         config.vision_evaluator.timeout_seconds = settings.vision_evaluator_timeout_seconds
+    if settings.user_group_resolver_enabled is not None:
+        config.user_group_resolver.enabled = settings.user_group_resolver_enabled
+    if settings.user_group_resolver_provider:
+        config.user_group_resolver.provider = settings.user_group_resolver_provider
+    if settings.user_group_resolver_cache_ttl_seconds is not None:
+        config.user_group_resolver.cache_ttl_seconds = settings.user_group_resolver_cache_ttl_seconds
+    if settings.user_group_resolver_keycloak_base_url:
+        config.user_group_resolver.keycloak.base_url = settings.user_group_resolver_keycloak_base_url
+    if settings.user_group_resolver_keycloak_realm:
+        config.user_group_resolver.keycloak.realm = settings.user_group_resolver_keycloak_realm
+    if settings.user_group_resolver_keycloak_client_id:
+        config.user_group_resolver.keycloak.client_id = settings.user_group_resolver_keycloak_client_id
+    if settings.user_group_resolver_keycloak_client_secret:
+        config.user_group_resolver.keycloak.client_secret = settings.user_group_resolver_keycloak_client_secret
