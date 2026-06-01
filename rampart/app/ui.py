@@ -505,6 +505,7 @@ async def create_client_route(request: Request) -> HTMLResponse:
             upstream_timeout_seconds=_optional_float(form.get("upstream_timeout_seconds", "")),
             notes=form.get("notes", "").strip(),
             policy_ids=_selected_policy_ids(form),
+            group_id=form.get("group_id", "").strip(),
             path=get_config().clients.path,
         )
     except ValueError as error:
@@ -548,6 +549,7 @@ async def update_client_route(client_id: str, request: Request) -> HTMLResponse:
     existing.upstream_api_key = form.get("upstream_api_key", "").strip()
     existing.upstream_timeout_seconds = _optional_float(form.get("upstream_timeout_seconds", ""))
     existing.notes = form.get("notes", "").strip()
+    existing.group_id = form.get("group_id", "").strip()
     existing.policy_ids = _selected_policy_ids(form)
     existing.enabled = form.get("enabled") == "on"
     existing.discovery_enabled = form.get("discovery_enabled") == "on"
@@ -1442,6 +1444,13 @@ def _client_form(client: Optional[ClientRecord], title: str, action_url: str, er
           <label>API Key<input name="upstream_api_key" value="{get_value("upstream_api_key")}" autocomplete="off"></label>
           <label>Timeout Seconds<input name="upstream_timeout_seconds" value="{get_value("upstream_timeout_seconds")}" inputmode="decimal"></label>
         </fieldset>
+        <label>Group
+          <select name="group_id">
+            <option value="">None (assign policies directly)</option>
+            {_group_options(client.group_id if client else "")}
+          </select>
+        </label>
+        <div class="hint" style="margin-top:-8px">Assign to a group to inherit its policies. Leave empty to assign policies directly below.</div>
         <label style="display:flex;align-items:center;gap:8px;width:fit-content"><input type="checkbox" name="enabled" {enabled} style="width:auto"> Enabled</label>
         <label style="display:flex;align-items:center;gap:8px;width:fit-content"><input type="checkbox" name="discovery_enabled" {"checked" if (client.discovery_enabled if client else False) else ""} style="width:auto"> Discovery Mode</label>
         <div class="hint" style="margin-top:-8px">When enabled, the extension captures all POST requests on unknown sites for endpoint discovery.</div>
@@ -1474,6 +1483,14 @@ def _optional_float(value: str) -> Optional[float]:
 def _optional_int(value: str) -> Optional[int]:
     value = value.strip()
     return int(value) if value else None
+
+
+def _group_options(selected_group_id: str) -> str:
+    groups = store_list_groups()
+    return "\n".join(
+        f'<option value="{escape(g.id)}" {"selected" if g.id == selected_group_id else ""}>{escape(g.name)} ({escape(g.id)})</option>'
+        for g in groups
+    )
 
 
 def _policy_assignment_checkboxes(selected_policy_ids: list[str]) -> str:

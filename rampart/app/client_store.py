@@ -96,6 +96,7 @@ def create_client(
     upstream_timeout_seconds: Optional[float] = None,
     notes: str = "",
     policy_ids: Optional[list[str]] = None,
+    group_id: str = "",
     path: Optional[str] = None,
 ) -> CreatedClient:
     if get_client(client_id, path):
@@ -115,6 +116,7 @@ def create_client(
         upstream_timeout_seconds=upstream_timeout_seconds,
         notes=notes,
         policy_ids=policy_ids or [],
+        group_id=group_id,
         key_hash=hash_password(api_key),
         created_at=_now(),
     )
