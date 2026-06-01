@@ -328,6 +328,13 @@ async def update_settings(request: Request) -> HTMLResponse:
             upstream_model=form.get("upstream_model", "").strip(),
             upstream_api_key=form.get("upstream_api_key", "").strip(),
             upstream_timeout_seconds=_optional_float(form.get("upstream_timeout_seconds", "")),
+            user_group_resolver_enabled=form.get("user_group_resolver_enabled") == "on",
+            user_group_resolver_provider=form.get("user_group_resolver_provider", "").strip(),
+            user_group_resolver_cache_ttl_seconds=_optional_int(form.get("user_group_resolver_cache_ttl_seconds", "")),
+            user_group_resolver_keycloak_base_url=form.get("user_group_resolver_keycloak_base_url", "").strip(),
+            user_group_resolver_keycloak_realm=form.get("user_group_resolver_keycloak_realm", "").strip(),
+            user_group_resolver_keycloak_client_id=form.get("user_group_resolver_keycloak_client_id", "").strip(),
+            user_group_resolver_keycloak_client_secret=form.get("user_group_resolver_keycloak_client_secret", "").strip(),
         )
     except ValueError as error:
         audit_event(request, "settings.update", actor=actor, result="failure", detail=str(error))
@@ -1111,6 +1118,24 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
             </div>
           </label>
         </fieldset>
+        <fieldset class="fieldset">
+          <legend>User Group Resolver</legend>
+          <div class="hint">Resolve end-user identity to external group memberships for per-user policy assignment.</div>
+          <div>
+            <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;color:var(--text-secondary)">Enabled <input type="checkbox" name="user_group_resolver_enabled" {"checked" if config.user_group_resolver.enabled else ""} style="width:auto"></label>
+            <div class="hint" style="margin-top:4px">When enabled, the OpenAI 'user' field (email) is resolved to external group memberships for policy selection.</div>
+          </div>
+          <label>Provider
+            <select name="user_group_resolver_provider">
+              <option value="keycloak" {"selected" if config.user_group_resolver.provider == "keycloak" else ""}>Keycloak</option>
+            </select>
+          </label>
+          <label>Cache TTL (seconds)<input name="user_group_resolver_cache_ttl_seconds" value="{get_value("user_group_resolver_cache_ttl_seconds", config.user_group_resolver.cache_ttl_seconds)}" inputmode="numeric"></label>
+          <label>Keycloak Base URL<input name="user_group_resolver_keycloak_base_url" value="{get_value("user_group_resolver_keycloak_base_url", config.user_group_resolver.keycloak.base_url)}" placeholder="https://keycloak.example.com"></label>
+          <label>Keycloak Realm<input name="user_group_resolver_keycloak_realm" value="{get_value("user_group_resolver_keycloak_realm", config.user_group_resolver.keycloak.realm)}" placeholder="dha"></label>
+          <label>Keycloak Client ID<input name="user_group_resolver_keycloak_client_id" value="{get_value("user_group_resolver_keycloak_client_id", config.user_group_resolver.keycloak.client_id)}" placeholder="rampart-service"></label>
+          <label>Keycloak Client Secret<input name="user_group_resolver_keycloak_client_secret" value="{get_value("user_group_resolver_keycloak_client_secret", config.user_group_resolver.keycloak.client_secret)}" type="password" autocomplete="off"></label>
+        </fieldset>
         <div class="actions"><button class="button primary" type="submit">Save Settings</button></div>
       </form>
     """
@@ -1203,6 +1228,11 @@ def _optional_float(value: str) -> Optional[float]:
     if not value:
         return None
     return float(value)
+
+
+def _optional_int(value: str) -> Optional[int]:
+    value = value.strip()
+    return int(value) if value else None
 
 
 def _policy_assignment_checkboxes(selected_policy_ids: list[str]) -> str:
