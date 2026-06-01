@@ -430,6 +430,86 @@ async def update_settings(request: Request) -> HTMLResponse:
     return RedirectResponse("/ui/settings?message=Settings+saved", status_code=303)
 
 
+@router.get("/ui/settings/backup")
+async def download_backup(request: Request):
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    import io
+    import zipfile
+    from datetime import datetime, timezone
+    from fastapi.responses import StreamingResponse
+
+    config = get_config()
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        backup_files = [
+            config.clients.path,
+            config.settings.path,
+            config.auth.auth_state_path,
+            config.auth.audit_log_path,
+            config.tracking.log_path,
+            config.user_group_resolver.mappings_path,
+            str(get_policy_path()),
+        ]
+        # Also pick up groups.json and sites.json from data/
+        from rampart.app.group_store import GROUP_STORE_PATH
+        from rampart.app.site_store import SITE_STORE_PATH
+        backup_files.extend([GROUP_STORE_PATH, SITE_STORE_PATH])
+
+        from pathlib import Path
+        for filepath in backup_files:
+            p = Path(filepath)
+            if p.exists():
+                zf.write(p, p.as_posix())
+    buf.seek(0)
+    audit_event(request, "settings.backup", actor=read_session_user(request), result="success")
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="rampart-backup-{timestamp}.zip"'},
+    )
+
+
+@router.post("/ui/settings/restore")
+async def restore_backup(request: Request):
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    import io
+    import zipfile
+    from pathlib import Path
+
+    actor = read_session_user(request)
+    form = await request.form()
+    upload = form.get("backup_file")
+    if not upload or not hasattr(upload, "read"):
+        audit_event(request, "settings.restore", actor=actor, result="failure", detail="No file uploaded")
+        return RedirectResponse("/ui/settings?message=No+file+uploaded", status_code=303)
+
+    content = await upload.read()
+    try:
+        buf = io.BytesIO(content)
+        with zipfile.ZipFile(buf, "r") as zf:
+            # Validate: only allow known paths
+            allowed_prefixes = ("data/", "logs/", "policies/")
+            for name in zf.namelist():
+                if not any(name.startswith(p) for p in allowed_prefixes):
+                    audit_event(request, "settings.restore", actor=actor, result="failure", detail=f"Rejected path: {name}")
+                    return RedirectResponse(f"/ui/settings?message=Backup+contains+invalid+path:+{quote(name)}", status_code=303)
+            for name in zf.namelist():
+                target = Path(name)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(zf.read(name))
+    except zipfile.BadZipFile:
+        audit_event(request, "settings.restore", actor=actor, result="failure", detail="Invalid zip file")
+        return RedirectResponse("/ui/settings?message=Invalid+zip+file", status_code=303)
+
+    audit_event(request, "settings.restore", actor=actor, result="success", detail=f"{len(content)} bytes")
+    return RedirectResponse("/ui/settings?message=Backup+restored.+Restart+the+server+for+changes+to+take+effect.", status_code=303)
+
+
 @router.get("/ui/clients", response_class=HTMLResponse)
 async def clients_index(request: Request, message: Optional[str] = None, api_key: Optional[str] = None) -> HTMLResponse:
     redirect = require_ui_user(request)
@@ -1381,6 +1461,17 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
         </fieldset>
         <div class="actions"><button class="button primary" type="submit">Save Settings</button></div>
       </form>
+      <fieldset class="fieldset" style="margin-top:24px">
+        <legend>Backup &amp; Restore</legend>
+        <div class="hint">Download a snapshot of all RAMPART configuration, policies, and logs. Upload a previous backup to restore.</div>
+        <div style="display:flex;gap:12px;margin-top:12px;flex-wrap:wrap;align-items:flex-start">
+          <a class="button primary" href="/ui/settings/backup" style="text-decoration:none">Download Backup (.zip)</a>
+          <form method="post" action="/ui/settings/restore" enctype="multipart/form-data" style="display:flex;gap:8px;align-items:center">
+            <input type="file" name="backup_file" accept=".zip" required style="font-size:13px">
+            <button class="button danger" type="submit" onclick="return confirm('This will overwrite all current configuration, policies, and logs. Continue?')">Restore from Backup</button>
+          </form>
+        </div>
+      </fieldset>
     """
     return _page("RAMPART Settings", body, actor)
 
