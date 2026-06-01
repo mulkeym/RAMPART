@@ -75,6 +75,35 @@ async def _start_cache_persistence():
     asyncio.create_task(_persist_loop())
 
 
+@app.on_event("startup")
+async def _start_syslog_forwarder():
+    config = get_config()
+    if not config.syslog.enabled:
+        return
+    from rampart.app.syslog_forwarder import SyslogSender, format_cef
+    from rampart.app.prompt_log import get_entries_since
+
+    sender = SyslogSender(config.syslog.host, config.syslog.port, config.syslog.protocol)
+    interval = config.syslog.send_interval_seconds
+
+    async def _forward_loop():
+        cursor = 0
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                entries, cursor = get_entries_since(cursor)
+                for entry in entries:
+                    try:
+                        sender.send(format_cef(entry))
+                    except OSError:
+                        logger.warning("Syslog send failed to %s:%d, skipping batch", config.syslog.host, config.syslog.port)
+                        break
+            except Exception:
+                logger.exception("Syslog forwarder error")
+
+    asyncio.create_task(_forward_loop())
+
+
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     return HealthResponse(status="ok")
