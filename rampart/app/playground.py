@@ -10,6 +10,7 @@ from urllib.parse import parse_qs
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
+from rampart.app.client_store import get_client, list_clients
 from rampart.app.config import CheckConfig, PolicyConfig, UpstreamConfig, get_config
 from rampart.app.prompt_log import PromptLogEntry, build_policy_results, log_prompt
 from rampart.app.security.audit import audit_event
@@ -34,6 +35,7 @@ def _playground_page(config, actor: Optional[str], results_html: str = "") -> st
     policy_checkboxes = _policy_checkboxes(config.policies)
     upstream_model = escape(config.upstream.model or "")
     upstream_url = escape(config.upstream.base_url or "")
+    client_options = _client_options(config)
     body = f"""
       <section class="toolbar">
         <div>
@@ -42,12 +44,17 @@ def _playground_page(config, actor: Optional[str], results_html: str = "") -> st
         </div>
       </section>
       <form id="pg-form" class="pg-layout">
-        <div style="padding:12px 16px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;display:flex;align-items:center;gap:12px">
+        <div style="padding:12px 16px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <label style="font-size:13px;color:var(--muted);white-space:nowrap;margin:0">Test Scenario:</label>
           <select id="pg-scenario" name="scenario_type" onchange="pgScenarioChange(this.value)" style="flex:1;max-width:300px">
             <option value="prompt" selected>Prompt Evaluation</option>
             <option value="tools">Tool Call Test</option>
             <option value="raw_json">Raw JSON</option>
+          </select>
+          <label style="font-size:13px;color:var(--muted);white-space:nowrap;margin:0">Test as Client:</label>
+          <select id="pg-client" name="test_client_id" onchange="pgClientChange(this.value)" style="flex:1;max-width:300px">
+            <option value="">Manual (select policies below)</option>
+            {client_options}
           </select>
         </div>
         <div class="pg-input">
@@ -142,6 +149,40 @@ def _playground_page(config, actor: Optional[str], results_html: str = "") -> st
     return _page("RAMPART Playground", body, actor)
 
 
+def _client_options(config) -> str:
+    clients = list_clients(config.clients.path)
+    items = []
+    for c in clients:
+        if not c.enabled:
+            continue
+        label = c.id
+        if c.owner_email or c.owner_name:
+            label += f" ({c.owner_email or c.owner_name})"
+        if c.group_id:
+            label += f" [group: {c.group_id}]"
+        items.append(f'<option value="{escape(c.id)}">{escape(label)}</option>')
+    return "\n".join(items)
+
+
+def _resolve_client_policies(config, client_id: str) -> list[PolicyConfig]:
+    """Resolve policies for a client the same way the API does."""
+    client = get_client(client_id, config.clients.path)
+    if not client:
+        return []
+    enabled_policies = [p for p in config.policies if p.enabled]
+    if client.group_id:
+        from rampart.app.group_store import get_group
+        group = get_group(client.group_id)
+        if group and group.policy_ids:
+            assigned = set(group.policy_ids)
+            return [p for p in enabled_policies if p.id in assigned]
+        return enabled_policies
+    if client.policy_ids:
+        assigned = set(client.policy_ids)
+        return [p for p in enabled_policies if p.id in assigned]
+    return enabled_policies
+
+
 def _raw_json_template() -> str:
     return escape(json.dumps({
         "model": "gpt-4",
@@ -186,6 +227,15 @@ def _policy_checkboxes(policies: list[PolicyConfig]) -> str:
 
 def _playground_script() -> str:
     return """<script>
+function pgClientChange(clientId) {
+  var policiesSection = document.querySelector('.pg-policies');
+  if (clientId) {
+    if (policiesSection) policiesSection.style.display = 'none';
+  } else {
+    if (policiesSection) policiesSection.style.display = '';
+  }
+}
+
 function pgScenarioChange(scenario) {
   var msgSection = document.querySelector('.pg-messages');
   var userSection = document.getElementById('pg-user-section');
@@ -347,7 +397,13 @@ async def playground_evaluate(request: Request) -> HTMLResponse:
     except ValueError as e:
         return HTMLResponse(f'<div class="notice error">{escape(str(e))}</div>')
 
-    selected_policies = _resolve_selected_policies(config, form)
+    test_client_id = form.get("test_client_id", "").strip()
+    if test_client_id:
+        selected_policies = _resolve_client_policies(config, test_client_id)
+        if not selected_policies:
+            return HTMLResponse(f'<div class="notice error">Client {escape(test_client_id)} not found or has no policies.</div>')
+    else:
+        selected_policies = _resolve_selected_policies(config, form)
 
     from rampart.app.policy.engine import PolicyEngine
     engine = PolicyEngine(config, selected_policies)
@@ -360,6 +416,7 @@ async def playground_evaluate(request: Request) -> HTMLResponse:
     log_prompt(PromptLogEntry(
         source="playground",
         user=openai_request.get("user") or actor,
+        client_id=test_client_id or None,
         model=openai_request.get("model"),
         messages=openai_request.get("messages", []),
         decision="fail" if any(r["status"] == "match" for r in policy_results) else "accept",
@@ -402,7 +459,11 @@ async def playground_llm(request: Request) -> HTMLResponse:
         return HTMLResponse(f'<div class="notice error">{escape(str(e))}</div>')
 
     # Re-run evaluation to get sanitized request (lightweight, no LLM calls needed for this)
-    selected_policies = _resolve_selected_policies(config, form)
+    test_client_id = form.get("test_client_id", "").strip()
+    if test_client_id:
+        selected_policies = _resolve_client_policies(config, test_client_id)
+    else:
+        selected_policies = _resolve_selected_policies(config, form)
     from rampart.app.policy.engine import PolicyEngine
     engine = PolicyEngine(config, selected_policies)
     response = await engine.evaluate(openai_request)
