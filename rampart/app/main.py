@@ -202,14 +202,24 @@ def _get_or_create_resolver(resolver_config: UserGroupResolverConfig):
     return resolver
 
 
-async def resolve_policies_for_user(config: AppConfig, user: str) -> list[PolicyConfig]:
+class _UserGroupResult:
+    """Holds resolved group info for prompt logging."""
+    __slots__ = ("external_groups", "rampart_group_ids", "policies")
+
+    def __init__(self, external_groups: list[str], rampart_group_ids: list[str], policies: list[PolicyConfig]):
+        self.external_groups = external_groups
+        self.rampart_group_ids = rampart_group_ids
+        self.policies = policies
+
+
+async def resolve_policies_for_user(config: AppConfig, user: str) -> Optional[_UserGroupResult]:
     """Resolve policies for a user via external group provider and mapping store."""
     resolver_config = config.user_group_resolver
     resolver = _get_or_create_resolver(resolver_config)
 
     external_groups = await resolver.resolve(user)
     if not external_groups:
-        return []
+        return None
 
     from rampart.app.group_mapping_store import list_mappings
     from rampart.app.group_store import get_group
@@ -218,6 +228,7 @@ async def resolve_policies_for_user(config: AppConfig, user: str) -> list[Policy
     external_set = set(external_groups)
 
     matched_policy_ids: set[str] = set()
+    rampart_group_ids: list[str] = []
     enabled_policies = [p for p in config.policies if p.enabled]
 
     for mapping in mappings:
@@ -225,24 +236,36 @@ async def resolve_policies_for_user(config: AppConfig, user: str) -> list[Policy
             continue
         if mapping.external_group in external_set:
             group = get_group(mapping.rampart_group_id)
-            if group and group.policy_ids:
-                matched_policy_ids.update(group.policy_ids)
+            if group:
+                rampart_group_ids.append(group.id)
+                if group.policy_ids:
+                    matched_policy_ids.update(group.policy_ids)
 
     if not matched_policy_ids:
-        return []
+        return _UserGroupResult(external_groups, rampart_group_ids, [])
 
-    return [p for p in enabled_policies if p.id in matched_policy_ids]
+    policies = [p for p in enabled_policies if p.id in matched_policy_ids]
+    return _UserGroupResult(external_groups, rampart_group_ids, policies)
+
+
+# Stashed group resolution result for current request (used by _log_prompt)
+_last_user_group_result: Optional[_UserGroupResult] = None
 
 
 async def _resolve_policies(config: AppConfig, client: Optional[ClientRecord], user: Optional[str] = None) -> list[PolicyConfig]:
+    global _last_user_group_result
+    _last_user_group_result = None
     enabled_policies = [policy for policy in config.policies if policy.enabled]
 
     # If user is present and resolver is enabled, try user-based resolution first
     if user and config.user_group_resolver.enabled:
         try:
-            user_policies = await resolve_policies_for_user(config, user)
-            if user_policies:
-                return user_policies
+            result = await resolve_policies_for_user(config, user)
+            if result and result.policies:
+                _last_user_group_result = result
+                return result.policies
+            elif result:
+                _last_user_group_result = result  # groups resolved but no policy match
         except Exception:
             logger.exception("User group resolver failed for user=%s, falling back", user)
 
@@ -314,6 +337,7 @@ def _log_prompt(
     eval_ms: int,
     source: str,
 ) -> None:
+    grp = _last_user_group_result
     log_prompt(PromptLogEntry(
         source=source,
         user=user,
@@ -322,6 +346,8 @@ def _log_prompt(
         source_ip=request.client.host if request.client else None,
         model=openai_request.get("model"),
         messages=openai_request.get("messages", []),
+        resolved_groups=grp.external_groups if grp else [],
+        mapped_rampart_groups=grp.rampart_group_ids if grp else [],
         decision=response.decision,
         policy_results=build_policy_results(policies, response.violations),
         violations=[v.model_dump() for v in response.violations],

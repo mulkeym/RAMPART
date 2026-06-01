@@ -30,6 +30,8 @@ class PromptLogEntry(BaseModel):
     source_ip: Optional[str] = None
     model: Optional[str] = None
     messages: list[dict[str, Any]] = Field(default_factory=list)
+    resolved_groups: list[str] = Field(default_factory=list)  # external groups from identity provider
+    mapped_rampart_groups: list[str] = Field(default_factory=list)  # RAMPART groups after mapping
     decision: str = ""  # "accept" or "fail"
     policy_results: list[PolicyResult] = Field(default_factory=list)
     violations: list[dict[str, Any]] = Field(default_factory=list)

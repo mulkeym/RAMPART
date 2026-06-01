@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import patch, AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
-from rampart.app.main import app
+from rampart.app.main import app, _UserGroupResult
 from rampart.app.config import (
     AppConfig, PolicyConfig, CheckConfig, UserGroupResolverConfig, KeycloakConfig,
 )
@@ -43,7 +43,7 @@ def test_user_field_resolves_policies(client):
 
     with patch("rampart.app.main.get_config", return_value=config), \
          patch("rampart.app.main._resolve_client_record", return_value=None), \
-         patch("rampart.app.main.resolve_policies_for_user", new_callable=AsyncMock, return_value=[policies[1]]) as mock_resolve, \
+         patch("rampart.app.main.resolve_policies_for_user", new_callable=AsyncMock, return_value=_UserGroupResult(["DHA-Clinical"], ["clinical-staff"], [policies[1]])) as mock_resolve, \
          patch("rampart.app.main.write_evaluation_event"):
         resp = client.post("/v1/rampart/evaluate", json={
             "request": {"model": "gpt-4", "messages": [{"role": "user", "content": "hello SECRET_CLINICAL"}], "user": "jsmith@dha.mil"}

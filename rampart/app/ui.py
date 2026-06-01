@@ -235,6 +235,8 @@ async def prompt_log_page(request: Request) -> HTMLResponse:
         f'<td><span class="badge {escape(e.source)}">{escape(e.source)}</span></td>'
         f'<td>{escape(e.user or "-")}</td>'
         f'<td>{escape(e.client_id or "-")}</td>'
+        f'<td>{escape(", ".join(e.resolved_groups) if e.resolved_groups else "-")}</td>'
+        f'<td>{escape(", ".join(e.mapped_rampart_groups) if e.mapped_rampart_groups else "-")}</td>'
         f'<td>{escape(e.model or "-")}</td>'
         f'<td>{escape(_truncate_prompt(e.messages))}</td>'
         f'<td><span class="decision-pill {"fail" if e.decision == "fail" else "accept"}">{escape(e.decision)}</span></td>'
@@ -253,9 +255,9 @@ async def prompt_log_page(request: Request) -> HTMLResponse:
       <section class="panel" style="overflow-x:auto">
         <table>
           <thead><tr>
-            <th>Time</th><th>Source</th><th>User</th><th>Client</th><th>Model</th><th>Prompt</th><th>Decision</th><th>Policies</th><th>Eval</th>
+            <th>Time</th><th>Source</th><th>User</th><th>Client</th><th>Ext Groups</th><th>RAMPART Groups</th><th>Model</th><th>Prompt</th><th>Decision</th><th>Policies</th><th>Eval</th>
           </tr></thead>
-          <tbody>{rows or _empty_row(9, "No prompts logged yet.")}</tbody>
+          <tbody>{rows or _empty_row(11, "No prompts logged yet.")}</tbody>
         </table>
       </section>
       <style>
