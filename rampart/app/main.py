@@ -1,5 +1,6 @@
 from copy import deepcopy
 from hashlib import sha256
+import logging
 from time import time
 from typing import Any, Optional
 
@@ -8,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from rampart.app.client_store import ClientRecord, client_context_from_record, record_evaluation, record_token_usage, resolve_client_from_api_key
-from rampart.app.config import AppConfig, PolicyConfig, UpstreamConfig, get_config
+from rampart.app.config import AppConfig, PolicyConfig, UpstreamConfig, UserGroupResolverConfig, get_config
 from rampart.app.models import EvaluationRequest, EvaluationResponse, HealthResponse
 from rampart.app.openai.compat import extract_user
 from rampart.app.openai.proxy import openai_policy_error, proxy_chat_completion, proxy_chat_completion_stream
@@ -19,6 +20,12 @@ CACHE_TTL = 300  # 5 minutes
 CACHE_MAX_SIZE = 1000
 from rampart.app.policy.engine import PolicyEngine
 from rampart.app.tracking import ClientContext, write_evaluation_event
+
+logger = logging.getLogger(__name__)
+
+# Singleton state for UserGroupResolver
+_resolver_instance: Optional[Any] = None
+_resolver_config_snapshot: Optional[UserGroupResolverConfig] = None
 from rampart.app.discovery import router as discovery_router
 from rampart.app.enrollment import router as enrollment_router
 from rampart.app.extension import router as extension_router
@@ -59,10 +66,11 @@ async def health() -> HealthResponse:
 async def evaluate(payload: EvaluationRequest, request: Request) -> EvaluationResponse:
     config = get_config()
     client_record = _resolve_client_record(config, request)
-    policies = _resolve_policies(config, client_record)
+    user = extract_user(payload.request)
+    policies = await _resolve_policies(config, client_record, user=user)
     engine = PolicyEngine(config, policies)
     response = await engine.evaluate(payload.request)
-    _track_evaluation(config, request, response, client_record, policies, user=extract_user(payload.request))
+    _track_evaluation(config, request, response, client_record, policies, user=user)
     if client_record:
         record_evaluation(client_record.id, len(response.violations), config.clients.path)
     return response
@@ -72,7 +80,8 @@ async def evaluate(payload: EvaluationRequest, request: Request) -> EvaluationRe
 async def evaluate_chat_completions(payload: dict[str, Any], request: Request):
     config = get_config()
     client_record = _resolve_client_record(config, request)
-    policies = _resolve_policies(config, client_record)
+    user = extract_user(payload)
+    policies = await _resolve_policies(config, client_record, user=user)
     is_streaming = payload.get("stream", False)
 
     # Check evaluation cache
@@ -84,7 +93,7 @@ async def evaluate_chat_completions(payload: dict[str, Any], request: Request):
         response = await engine.evaluate(payload)
         _set_cached_eval(cache_key, response)
 
-    _track_evaluation(config, request, response, client_record, policies, user=extract_user(payload))
+    _track_evaluation(config, request, response, client_record, policies, user=user)
     if client_record:
         record_evaluation(client_record.id, len(response.violations), config.clients.path)
     blocking_violations = _blocking_violations(response, policies)
@@ -135,8 +144,82 @@ def _resolve_client_record(config: AppConfig, request: Request) -> Optional[Clie
     return resolve_client_from_api_key(api_key, config.clients.path)
 
 
-def _resolve_policies(config: AppConfig, client: Optional[ClientRecord]) -> list[PolicyConfig]:
+def _get_or_create_resolver(resolver_config: UserGroupResolverConfig):
+    """Return a cached UserGroupResolver, recreating if config changed."""
+    global _resolver_instance, _resolver_config_snapshot
+    from rampart.app.user_group_resolver import UserGroupResolver
+
+    if _resolver_instance is not None and _resolver_config_snapshot == resolver_config:
+        return _resolver_instance
+
+    if resolver_config.provider == "keycloak":
+        from rampart.app.group_providers.keycloak import KeycloakGroupProvider
+        kc = resolver_config.keycloak
+        provider = KeycloakGroupProvider(
+            base_url=kc.base_url,
+            realm=kc.realm,
+            client_id=kc.client_id,
+            client_secret=kc.client_secret,
+        )
+    else:
+        raise ValueError(f"Unknown group provider: {resolver_config.provider}")
+
+    resolver = UserGroupResolver(
+        provider=provider,
+        cache_path=resolver_config.cache_path,
+        cache_ttl_seconds=resolver_config.cache_ttl_seconds,
+        cache_max_size=resolver_config.cache_max_size,
+    )
+    resolver.load()
+    _resolver_instance = resolver
+    _resolver_config_snapshot = resolver_config.model_copy(deep=True)
+    return resolver
+
+
+async def resolve_policies_for_user(config: AppConfig, user: str) -> list[PolicyConfig]:
+    """Resolve policies for a user via external group provider and mapping store."""
+    resolver_config = config.user_group_resolver
+    resolver = _get_or_create_resolver(resolver_config)
+
+    external_groups = await resolver.resolve(user)
+    if not external_groups:
+        return []
+
+    from rampart.app.group_mapping_store import list_mappings
+    from rampart.app.group_store import get_group
+
+    mappings = list_mappings(resolver_config.mappings_path)
+    external_set = set(external_groups)
+
+    matched_policy_ids: set[str] = set()
+    enabled_policies = [p for p in config.policies if p.enabled]
+
+    for mapping in mappings:
+        if not mapping.enabled:
+            continue
+        if mapping.external_group in external_set:
+            group = get_group(mapping.rampart_group_id)
+            if group and group.policy_ids:
+                matched_policy_ids.update(group.policy_ids)
+
+    if not matched_policy_ids:
+        return []
+
+    return [p for p in enabled_policies if p.id in matched_policy_ids]
+
+
+async def _resolve_policies(config: AppConfig, client: Optional[ClientRecord], user: Optional[str] = None) -> list[PolicyConfig]:
     enabled_policies = [policy for policy in config.policies if policy.enabled]
+
+    # If user is present and resolver is enabled, try user-based resolution first
+    if user and config.user_group_resolver.enabled:
+        try:
+            user_policies = await resolve_policies_for_user(config, user)
+            if user_policies:
+                return user_policies
+        except Exception:
+            logger.exception("User group resolver failed for user=%s, falling back", user)
+
     if client is None:
         return enabled_policies
     # Group-enrolled clients: resolve policies from the group (always dynamic)
