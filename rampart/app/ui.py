@@ -430,6 +430,11 @@ async def update_settings(request: Request) -> HTMLResponse:
             user_group_resolver_keycloak_realm=form.get("user_group_resolver_keycloak_realm", "").strip(),
             user_group_resolver_keycloak_client_id=form.get("user_group_resolver_keycloak_client_id", "").strip(),
             user_group_resolver_keycloak_client_secret=form.get("user_group_resolver_keycloak_client_secret", "").strip(),
+            syslog_enabled=form.get("syslog_enabled") == "on",
+            syslog_protocol=form.get("syslog_protocol", "").strip(),
+            syslog_host=form.get("syslog_host", "").strip(),
+            syslog_port=_optional_int(form.get("syslog_port", "")),
+            syslog_send_interval_seconds=_optional_int(form.get("syslog_send_interval_seconds", "")),
         )
     except ValueError as error:
         audit_event(request, "settings.update", actor=actor, result="failure", detail=str(error))
@@ -1368,6 +1373,23 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
           <label>Keycloak Realm<input name="user_group_resolver_keycloak_realm" value="{get_value("user_group_resolver_keycloak_realm", config.user_group_resolver.keycloak.realm)}" placeholder="dha"></label>
           <label>Keycloak Client ID<input name="user_group_resolver_keycloak_client_id" value="{get_value("user_group_resolver_keycloak_client_id", config.user_group_resolver.keycloak.client_id)}" placeholder="rampart-service"></label>
           <label>Keycloak Client Secret<input name="user_group_resolver_keycloak_client_secret" value="{get_value("user_group_resolver_keycloak_client_secret", config.user_group_resolver.keycloak.client_secret)}" type="password" autocomplete="off"></label>
+        </fieldset>
+        <fieldset class="fieldset">
+          <legend>Syslog Forwarder</legend>
+          <div class="hint">Forward prompt evaluation events to a syslog server in CEF format for Splunk/SIEM integration.</div>
+          <div>
+            <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;color:var(--text-secondary)">Enabled <input type="checkbox" name="syslog_enabled" {"checked" if config.syslog.enabled else ""} style="width:auto"></label>
+            <div class="hint" style="margin-top:4px">When enabled, new prompt log entries are forwarded on a periodic interval. Requires server restart to take effect.</div>
+          </div>
+          <label>Protocol
+            <select name="syslog_protocol">
+              <option value="udp" {"selected" if config.syslog.protocol == "udp" else ""}>UDP</option>
+              <option value="tcp" {"selected" if config.syslog.protocol == "tcp" else ""}>TCP</option>
+            </select>
+          </label>
+          <label>Host<input name="syslog_host" value="{get_value("syslog_host", config.syslog.host)}" placeholder="127.0.0.1"></label>
+          <label>Port<input name="syslog_port" value="{get_value("syslog_port", config.syslog.port)}" placeholder="514" inputmode="numeric"></label>
+          <label>Send Interval (seconds)<input name="syslog_send_interval_seconds" value="{get_value("syslog_send_interval_seconds", config.syslog.send_interval_seconds)}" placeholder="5" inputmode="numeric"></label>
         </fieldset>
         <div class="actions"><button class="button primary" type="submit">Save Settings</button></div>
       </form>
