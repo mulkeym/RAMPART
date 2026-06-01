@@ -42,6 +42,14 @@ def _playground_page(config, actor: Optional[str], results_html: str = "") -> st
         </div>
       </section>
       <form id="pg-form" class="pg-layout">
+        <div style="padding:12px 16px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;display:flex;align-items:center;gap:12px">
+          <label style="font-size:13px;color:var(--muted);white-space:nowrap;margin:0">Test Scenario:</label>
+          <select id="pg-scenario" name="scenario_type" onchange="pgScenarioChange(this.value)" style="flex:1;max-width:300px">
+            <option value="prompt" selected>Prompt Evaluation</option>
+            <option value="tools">Tool Call Test</option>
+            <option value="raw_json">Raw JSON</option>
+          </select>
+        </div>
         <div class="pg-input">
           <div class="pg-messages panel" style="padding:16px">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
@@ -76,6 +84,24 @@ def _playground_page(config, actor: Optional[str], results_html: str = "") -> st
               </div>
             </div>
             <input type="hidden" name="msg_count" id="pg-msg-count" value="2">
+          </div>
+          <div class="pg-user-field panel" style="padding:12px 16px;margin-top:8px" id="pg-user-section">
+            <label style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:6px;display:block">User Identity (optional)</label>
+            <input name="user_field" placeholder="email@example.com — for testing group-based policy resolution" style="width:100%">
+          </div>
+          <div id="pg-tools-section" style="display:none">
+            <div class="panel" style="padding:16px;margin-top:8px">
+              <label style="font-size:14px;font-weight:700;color:var(--text);display:block;margin-bottom:8px">Tool Names</label>
+              <input name="tool_names" placeholder="get_weather, execute_code, send_email (comma-separated)" style="width:100%">
+              <div class="hint" style="margin-top:6px">Enter tool names to test against tool_allowlist and tool_denylist policies. Names are wrapped in OpenAI function tool format automatically.</div>
+            </div>
+          </div>
+          <div id="pg-raw-section" style="display:none">
+            <div class="panel" style="padding:16px;margin-top:8px">
+              <label style="font-size:14px;font-weight:700;color:var(--text);display:block;margin-bottom:8px">OpenAI Request JSON</label>
+              <textarea name="raw_json" rows="18" style="width:100%;font-family:monospace;font-size:12px;line-height:1.5;background:var(--bg-primary);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:12px;resize:vertical">{_raw_json_template()}</textarea>
+              <div class="hint" style="margin-top:6px">Edit the full OpenAI-compatible request. Includes model, user, messages, and tools. RAMPART evaluates everything.</div>
+            </div>
           </div>
           <div class="pg-policies panel" style="padding:16px;text-align:left">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
@@ -114,6 +140,32 @@ def _playground_page(config, actor: Optional[str], results_html: str = "") -> st
     return _page("RAMPART Playground", body, actor)
 
 
+def _raw_json_template() -> str:
+    return escape(json.dumps({
+        "model": "gpt-4",
+        "user": "testuser@example.com",
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "Enter your prompt here"},
+        ],
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "example_tool",
+                    "description": "An example tool definition",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string"},
+                        },
+                    },
+                },
+            },
+        ],
+    }, indent=2))
+
+
 def _policy_checkboxes(policies: list[PolicyConfig]) -> str:
     if not policies:
         return '<div class="muted">No policies configured.</div>'
@@ -132,6 +184,30 @@ def _policy_checkboxes(policies: list[PolicyConfig]) -> str:
 
 def _playground_script() -> str:
     return """<script>
+function pgScenarioChange(scenario) {
+  var msgSection = document.querySelector('.pg-messages');
+  var userSection = document.getElementById('pg-user-section');
+  var toolsSection = document.getElementById('pg-tools-section');
+  var rawSection = document.getElementById('pg-raw-section');
+  var policiesSection = document.querySelector('.pg-policies');
+
+  if (msgSection) msgSection.style.display = 'none';
+  if (userSection) userSection.style.display = 'none';
+  if (toolsSection) toolsSection.style.display = 'none';
+  if (rawSection) rawSection.style.display = 'none';
+
+  if (scenario === 'prompt') {
+    if (msgSection) msgSection.style.display = '';
+    if (userSection) userSection.style.display = '';
+  } else if (scenario === 'tools') {
+    if (msgSection) msgSection.style.display = '';
+    if (userSection) userSection.style.display = '';
+    if (toolsSection) toolsSection.style.display = '';
+  } else if (scenario === 'raw_json') {
+    if (rawSection) rawSection.style.display = '';
+  }
+}
+
 var msgCount=2, adhocCount=0, imgCounts={0:0,1:0};
 
 function pgAddMessage(){
