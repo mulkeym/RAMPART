@@ -11,7 +11,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from rampart.app.config import CheckConfig, PolicyConfig, UpstreamConfig, get_config
-from rampart.app.prompt_log import PromptLogEntry, log_prompt
+from rampart.app.prompt_log import PromptLogEntry, build_policy_results, log_prompt
 from rampart.app.security.audit import audit_event
 from rampart.app.security.auth import read_session_user, require_ui_user
 from rampart.app.ui import _page, _severity_pill
@@ -286,6 +286,7 @@ async def playground_evaluate(request: Request) -> HTMLResponse:
         model=openai_request.get("model"),
         messages=openai_request.get("messages", []),
         decision="fail" if any(r["status"] == "match" for r in policy_results) else "accept",
+        policy_results=build_policy_results(selected_policies, response.violations),
         violations=[v.model_dump() for v in response.violations],
         applied_policies=[p.id for p in selected_policies],
         eval_ms=eval_ms,

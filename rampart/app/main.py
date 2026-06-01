@@ -20,7 +20,7 @@ _eval_cache: dict[str, tuple[EvaluationResponse, float]] = {}
 CACHE_TTL = 300  # 5 minutes
 CACHE_MAX_SIZE = 1000
 from rampart.app.policy.engine import PolicyEngine
-from rampart.app.prompt_log import PromptLogEntry, log_prompt
+from rampart.app.prompt_log import PromptLogEntry, PolicyResult, build_policy_results, log_prompt
 from rampart.app.tracking import ClientContext, write_evaluation_event
 
 logger = logging.getLogger(__name__)
@@ -323,6 +323,7 @@ def _log_prompt(
         model=openai_request.get("model"),
         messages=openai_request.get("messages", []),
         decision=response.decision,
+        policy_results=build_policy_results(policies, response.violations),
         violations=[v.model_dump() for v in response.violations],
         applied_policies=[p.id for p in policies if p.enabled],
         eval_ms=eval_ms,

@@ -238,7 +238,7 @@ async def prompt_log_page(request: Request) -> HTMLResponse:
         f'<td>{escape(e.model or "-")}</td>'
         f'<td>{escape(_truncate_prompt(e.messages))}</td>'
         f'<td><span class="decision-pill {"fail" if e.decision == "fail" else "accept"}">{escape(e.decision)}</span></td>'
-        f'<td>{len(e.violations)}</td>'
+        f'<td>{_policy_results_html(e.policy_results)}</td>'
         f'<td>{e.eval_ms or 0}ms</td>'
         f'</tr>'
         for e in entries
@@ -253,7 +253,7 @@ async def prompt_log_page(request: Request) -> HTMLResponse:
       <section class="panel" style="overflow-x:auto">
         <table>
           <thead><tr>
-            <th>Time</th><th>Source</th><th>User</th><th>Client</th><th>Model</th><th>Prompt</th><th>Decision</th><th>Violations</th><th>Eval</th>
+            <th>Time</th><th>Source</th><th>User</th><th>Client</th><th>Model</th><th>Prompt</th><th>Decision</th><th>Policies</th><th>Eval</th>
           </tr></thead>
           <tbody>{rows or _empty_row(9, "No prompts logged yet.")}</tbody>
         </table>
@@ -266,9 +266,29 @@ async def prompt_log_page(request: Request) -> HTMLResponse:
         .decision-pill {{ display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase; }}
         .decision-pill.fail {{ background:rgba(248,81,73,0.15);color:#f85149; }}
         .decision-pill.accept {{ background:rgba(63,185,80,0.15);color:#3fb950; }}
+        .pol-pass {{ color:#3fb950;font-size:11px; }}
+        .pol-fail {{ color:#f85149;font-size:11px; }}
+        .pol-pill {{ display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;margin:1px 2px; }}
+        .pol-pill.pass {{ background:rgba(63,185,80,0.1);color:#3fb950; }}
+        .pol-pill.fail {{ background:rgba(248,81,73,0.1);color:#f85149; }}
       </style>
     """
     return HTMLResponse(_page("RAMPART Prompt Log", body, read_session_user(request)))
+
+
+def _policy_results_html(policy_results: list) -> str:
+    """Render per-policy pass/fail pills."""
+    if not policy_results:
+        return '<span class="pol-pass">-</span>'
+    pills = []
+    for pr in policy_results:
+        pid = pr.policy_id if hasattr(pr, "policy_id") else pr.get("policy_id", "")
+        status = pr.status if hasattr(pr, "status") else pr.get("status", "")
+        msg = pr.message if hasattr(pr, "message") else pr.get("message", "")
+        cls = "pass" if status == "pass" else "fail"
+        title = f' title="{escape(msg)}"' if msg else ""
+        pills.append(f'<span class="pol-pill {cls}"{title}>{escape(pid)}</span>')
+    return "".join(pills)
 
 
 def _truncate_prompt(messages: list) -> str:
