@@ -1,3 +1,4 @@
+import asyncio
 from copy import deepcopy
 from hashlib import sha256
 import logging
@@ -55,6 +56,22 @@ app.include_router(extension_router)
 app.include_router(enrollment_router)
 app.include_router(discovery_router)
 app.include_router(mcp_router)
+
+
+@app.on_event("startup")
+async def _start_cache_persistence():
+    config = get_config()
+    if not config.user_group_resolver.enabled:
+        return
+    interval = config.user_group_resolver.cache_persist_interval_seconds
+
+    async def _persist_loop():
+        while True:
+            await asyncio.sleep(interval)
+            if _resolver_instance is not None:
+                _resolver_instance.persist()
+
+    asyncio.create_task(_persist_loop())
 
 
 @app.get("/health", response_model=HealthResponse)
