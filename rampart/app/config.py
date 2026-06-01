@@ -264,3 +264,13 @@ def _apply_local_settings(config: AppConfig) -> None:
         config.user_group_resolver.keycloak.client_id = settings.user_group_resolver_keycloak_client_id
     if settings.user_group_resolver_keycloak_client_secret:
         config.user_group_resolver.keycloak.client_secret = settings.user_group_resolver_keycloak_client_secret
+    if settings.syslog_enabled is not None:
+        config.syslog.enabled = settings.syslog_enabled
+    if settings.syslog_protocol:
+        config.syslog.protocol = settings.syslog_protocol
+    if settings.syslog_host:
+        config.syslog.host = settings.syslog_host
+    if settings.syslog_port is not None:
+        config.syslog.port = settings.syslog_port
+    if settings.syslog_send_interval_seconds is not None:
+        config.syslog.send_interval_seconds = settings.syslog_send_interval_seconds

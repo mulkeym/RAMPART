@@ -36,6 +36,12 @@ class RuntimeSettings(BaseModel):
     user_group_resolver_keycloak_realm: str = ""
     user_group_resolver_keycloak_client_id: str = ""
     user_group_resolver_keycloak_client_secret: str = ""
+    # Syslog Forwarder
+    syslog_enabled: Optional[bool] = None
+    syslog_protocol: str = ""
+    syslog_host: str = ""
+    syslog_port: Optional[int] = None
+    syslog_send_interval_seconds: Optional[int] = None
 
 
 def load_settings(path: str) -> RuntimeSettings:
