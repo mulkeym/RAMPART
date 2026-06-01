@@ -1,0 +1,1214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAMPART Architecture</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2333;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --blue: #58a6ff;
+    --blue-bg: rgba(56,139,253,0.08);
+    --blue-border: rgba(56,139,253,0.25);
+    --green: #3fb950;
+    --green-bg: rgba(63,185,80,0.08);
+    --green-border: rgba(63,185,80,0.25);
+    --orange: #d29922;
+    --orange-bg: rgba(210,153,34,0.08);
+    --orange-border: rgba(210,153,34,0.25);
+    --purple: #bc8cff;
+    --purple-bg: rgba(188,140,255,0.08);
+    --purple-border: rgba(188,140,255,0.25);
+    --red: #f85149;
+    --red-bg: rgba(248,81,73,0.1);
+    --teal: #39d0d8;
+    --teal-bg: rgba(57,208,216,0.08);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.5;
+    min-height: 100vh;
+  }
+  header {
+    text-align: center; padding: 40px 20px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 {
+    font-size: 2.2rem; font-weight: 700; letter-spacing: -0.5px;
+    background: linear-gradient(135deg, var(--blue), var(--green));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  header p { color: var(--text-dim); margin-top: 6px; font-size: 1rem; }
+  nav {
+    display: flex; justify-content: center; gap: 4px;
+    padding: 16px 20px 0; border-bottom: 1px solid var(--border);
+  }
+  nav button {
+    background: none; border: none; color: var(--text-dim);
+    padding: 10px 20px; font-size: 0.95rem; cursor: pointer;
+    border-bottom: 2px solid transparent; transition: all 0.2s;
+    font-family: inherit;
+  }
+  nav button:hover { color: var(--text); }
+  nav button.active {
+    color: var(--blue); border-bottom-color: var(--blue);
+  }
+  .tab-panel { display: none; padding: 30px 20px 60px; }
+  .tab-panel.active { display: block; }
+
+  /* ===== NETWORK DIAGRAM ===== */
+  .net-wrap {
+    max-width: 1340px; margin: 0 auto;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+  }
+  .net-wrap svg { display: block; }
+  .net-wrap svg text { font-family: inherit; }
+  .cluster-bg { rx: 12; ry: 12; }
+  .node-rect { rx: 8; ry: 8; filter: url(#shadow); cursor: default; }
+  .node-rect:hover { filter: url(#glow); }
+  .label-title { font-weight: 600; font-size: 13px; fill: var(--text); }
+  .label-sub { font-size: 11px; fill: var(--text-dim); }
+  .label-cluster {
+    font-weight: 700; font-size: 12px; text-transform: uppercase;
+    letter-spacing: 1.2px;
+  }
+  .conn { fill: none; stroke-width: 2; }
+  .conn-label {
+    font-size: 10px; fill: var(--text-dim);
+    font-weight: 500; letter-spacing: 0.3px;
+  }
+  .arrow { fill: var(--text-dim); }
+
+  /* ===== PIPELINE FLOW ===== */
+  .pipeline {
+    max-width: 720px; margin: 0 auto; position: relative;
+    padding-left: 60px;
+  }
+  .pipeline::before {
+    content: ''; position: absolute; left: 36px; top: 40px;
+    bottom: 40px; width: 2px;
+    background: linear-gradient(to bottom, var(--blue), var(--green), var(--blue));
+    opacity: 0.3;
+  }
+  .phase-label {
+    position: relative; font-size: 0.75rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 1.5px;
+    padding: 8px 0 16px; z-index: 1;
+  }
+  .phase-label.browser { color: var(--blue); }
+  .phase-label.server { color: var(--green); }
+  .phase-label.response { color: var(--purple); }
+  .step {
+    position: relative; margin-bottom: 12px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px 20px;
+    border-left: 3px solid var(--accent, var(--border));
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .step:hover {
+    border-color: var(--accent, var(--blue));
+    box-shadow: 0 0 20px rgba(0,0,0,0.3);
+  }
+  .step-num {
+    position: absolute; left: -48px; top: 14px;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--surface2); border: 2px solid var(--accent, var(--border));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.75rem; font-weight: 700; color: var(--accent, var(--text-dim));
+  }
+  .step h3 { font-size: 0.95rem; font-weight: 600; margin-bottom: 4px; }
+  .step p { font-size: 0.85rem; color: var(--text-dim); }
+  .step .detail { display: inline-block; font-size: 0.7rem; background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 7px; margin: 4px 4px 0 0; color: var(--text-dim); }
+  .boundary {
+    position: relative; text-align: center; margin: 24px 0;
+    font-size: 0.8rem; color: var(--orange); font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .boundary::before, .boundary::after {
+    content: ''; position: absolute; top: 50%;
+    width: calc(50% - 130px); height: 1px;
+    background: repeating-linear-gradient(90deg, var(--orange) 0, var(--orange) 6px, transparent 6px, transparent 12px);
+  }
+  .boundary::before { left: 0; }
+  .boundary::after { right: 0; }
+  .branch {
+    display: flex; gap: 12px; margin-bottom: 12px;
+  }
+  .branch-item {
+    flex: 1; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px;
+    border-top: 3px solid var(--accent, var(--border));
+  }
+  .branch-item h4 { font-size: 0.85rem; font-weight: 600; margin-bottom: 3px; }
+  .branch-item p { font-size: 0.8rem; color: var(--text-dim); }
+  .branch-label {
+    align-self: center; font-size: 0.7rem; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 1px; writing-mode: vertical-rl;
+    padding: 0 4px;
+  }
+  .decision {
+    position: relative; text-align: center; margin: 20px 0 12px;
+    padding: 14px; background: var(--surface2); border: 2px solid var(--orange);
+    border-radius: 10px;
+  }
+  .decision h3 { font-size: 0.9rem; color: var(--orange); }
+  .decision p { font-size: 0.8rem; color: var(--text-dim); }
+  .outcome-split {
+    display: flex; gap: 16px; margin-top: 12px;
+  }
+  .outcome {
+    flex: 1; border-radius: 10px; padding: 16px;
+    text-align: center;
+  }
+  .outcome.block {
+    background: var(--red-bg); border: 1px solid rgba(248,81,73,0.3);
+  }
+  .outcome.block h4 { color: var(--red); font-size: 0.95rem; }
+  .outcome.allow {
+    background: var(--green-bg); border: 1px solid var(--green-border);
+  }
+  .outcome.allow h4 { color: var(--green); font-size: 0.95rem; }
+  .outcome p { font-size: 0.8rem; color: var(--text-dim); margin-top: 6px; }
+  .outcome .icon { font-size: 1.8rem; margin-bottom: 6px; }
+
+  /* ===== ENROLLMENT FLOW ===== */
+  .enroll-pipeline { max-width: 720px; margin: 0 auto; position: relative; padding-left: 60px; }
+  .enroll-pipeline::before {
+    content: ''; position: absolute; left: 36px; top: 40px;
+    bottom: 40px; width: 2px; background: var(--teal); opacity: 0.2;
+  }
+  .enroll-pipeline .step { --accent: var(--teal); }
+  .enroll-pipeline .step-num { --accent: var(--teal); }
+  .enroll-pipeline .phase-label { color: var(--teal); }
+
+  /* ===== DETAILED SWIM LANE ===== */
+  .swim-intro {
+    text-align: center; color: var(--text-dim); font-size: 0.85rem;
+    margin-bottom: 20px; max-width: 860px; margin-left: auto; margin-right: auto;
+  }
+  .swim {
+    display: grid;
+    grid-template-columns: 190px 280px 1fr;
+    max-width: 860px;
+    margin: 0 auto;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--bg);
+  }
+  .swim-head {
+    padding: 14px 12px;
+    text-align: center;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    font-size: 0.72rem;
+    background: var(--surface);
+    border-bottom: 2px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 5;
+  }
+  .swim-head:not(:last-child) { border-right: 1px solid var(--border); }
+  .swim-cell {
+    padding: 4px 8px;
+    border-right: 1px dashed rgba(48,54,61,0.4);
+    display: flex;
+    align-items: flex-start;
+    justify-content: stretch;
+  }
+  .swim-cell:last-child { border-right: none; }
+  .swim-card {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    border-left: 3px solid var(--border);
+    transition: box-shadow 0.2s;
+  }
+  .swim-card:hover { box-shadow: 0 0 12px rgba(0,0,0,0.3); }
+  .swim-card h4 { font-size: 0.82rem; font-weight: 600; margin-bottom: 3px; }
+  .swim-card p { font-size: 0.78rem; color: var(--text-dim); margin: 0; }
+  .swim-card code {
+    font-size: 0.72rem; background: var(--surface2);
+    padding: 1px 5px; border-radius: 3px; color: var(--text);
+  }
+  .swim-card pre {
+    font-size: 0.7rem; color: var(--text-dim); margin-top: 6px;
+    white-space: pre; font-family: 'SF Mono', 'Fira Code', monospace;
+    background: var(--surface2); padding: 8px 10px; border-radius: 6px;
+    overflow-x: auto;
+  }
+  .swim-card .sub {
+    display: inline-block; font-size: 0.68rem;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 3px; padding: 1px 6px; margin: 3px 3px 0 0;
+    color: var(--text-dim);
+  }
+  .swim-card.u { border-left-color: var(--blue); }
+  .swim-card.e { border-left-color: var(--teal); }
+  .swim-card.s { border-left-color: var(--green); }
+  .swim-card.warn { border-left-color: var(--orange); }
+  .swim-card.dec {
+    border-left-color: var(--orange); border-color: rgba(210,153,34,0.4);
+    background: var(--surface2); text-align: center;
+  }
+  .swim-card.blk {
+    border-left-color: var(--red); border-color: rgba(248,81,73,0.3);
+    background: var(--red-bg);
+  }
+  .swim-card.ok {
+    border-left-color: var(--green); border-color: var(--green-border);
+    background: var(--green-bg);
+  }
+  .swim-card.log { border-left-color: var(--purple); }
+  .swim-xfer {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; justify-content: center;
+    padding: 4px 20px; position: relative; min-height: 30px;
+  }
+  .swim-xfer::before {
+    content: ''; position: absolute; top: 50%;
+    left: 8%; right: 8%; height: 1px; opacity: 0.2;
+  }
+  .swim-xfer.to-srv::before { background: linear-gradient(90deg, transparent 5%, var(--orange) 30%, var(--orange) 70%, transparent 95%); }
+  .swim-xfer.to-ext::before { background: linear-gradient(90deg, transparent 5%, var(--green) 30%, var(--green) 70%, transparent 95%); }
+  .swim-xfer.to-ext2::before { background: linear-gradient(90deg, transparent 5%, var(--teal) 30%, var(--teal) 70%, transparent 95%); }
+  .xf {
+    position: relative; background: var(--bg);
+    padding: 2px 12px; border-radius: 10px;
+    font-size: 0.72rem; font-weight: 600; letter-spacing: 0.3px;
+    white-space: nowrap; border: 1px solid var(--border);
+  }
+  .swim-xfer.to-srv .xf { color: var(--orange); }
+  .swim-xfer.to-ext .xf { color: var(--green); }
+  .swim-xfer.to-ext2 .xf { color: var(--teal); }
+  .swim-wait {
+    grid-column: 1 / -1; text-align: center;
+    padding: 12px; font-size: 0.75rem; color: var(--text-dim);
+    font-style: italic;
+    border-top: 1px dashed var(--border); border-bottom: 1px dashed var(--border);
+    background: rgba(30,36,48,0.3);
+  }
+  .swim-phase {
+    grid-column: 1 / -1; padding: 10px 16px;
+    font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1.5px; background: var(--surface);
+    border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  }
+  .swim-full {
+    grid-column: 1 / -1; padding: 6px 8px;
+  }
+  .swim-note {
+    grid-column: 1 / -1; text-align: center; padding: 2px 8px;
+    font-size: 0.68rem; color: var(--text-dim); text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+  .par-wrap {
+    display: flex; gap: 6px; width: 100%;
+  }
+  .par-wrap .swim-card { flex: 1; }
+
+  /* ===== LEGEND ===== */
+  .legend {
+    max-width: 720px; margin: 40px auto 0; padding: 16px 20px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .legend h4 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-dim); margin-bottom: 10px; }
+  .legend-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; }
+  .legend-swatch { width: 14px; height: 14px; border-radius: 4px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>RAMPART</h1>
+  <p>Prompt &amp; Tool-Calling Firewall for LLM API Requests</p>
+</header>
+
+<nav>
+  <button class="active" data-tab="network">Network Flow</button>
+  <button data-tab="pipeline">Evaluation Pipeline</button>
+  <button data-tab="enrollment">Extension Enrollment</button>
+  <button data-tab="detailed">Detailed Swim Lane</button>
+</nav>
+
+<!-- ================================================================ -->
+<!-- TAB 1: NETWORK FLOW DIAGRAM                                      -->
+<!-- ================================================================ -->
+<div class="tab-panel active" id="network">
+<div class="net-wrap">
+<svg viewBox="0 0 1320 870" width="1320" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="116%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.4"/>
+    </filter>
+    <filter id="glow" x="-8%" y="-8%" width="116%" height="124%">
+      <feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="#58a6ff" flood-opacity="0.3"/>
+    </filter>
+    <marker id="ah" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" class="arrow"/>
+    </marker>
+    <marker id="ah-blue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#58a6ff"/>
+    </marker>
+    <marker id="ah-green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#3fb950"/>
+    </marker>
+    <marker id="ah-orange" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#d29922"/>
+    </marker>
+    <marker id="ah-purple" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#bc8cff"/>
+    </marker>
+    <marker id="ah-teal" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#39d0d8"/>
+    </marker>
+  </defs>
+
+  <!-- ---- CLUSTER BACKGROUNDS ---- -->
+  <!-- Clients -->
+  <rect class="cluster-bg" x="12" y="15" width="295" height="480" fill="rgba(56,139,253,0.05)" stroke="rgba(56,139,253,0.15)" stroke-width="1"/>
+  <text x="28" y="38" class="label-cluster" fill="#58a6ff">Clients</text>
+
+  <!-- RAMPART Server -->
+  <rect class="cluster-bg" x="360" y="15" width="530" height="480" fill="rgba(63,185,80,0.05)" stroke="rgba(63,185,80,0.15)" stroke-width="1"/>
+  <text x="376" y="38" class="label-cluster" fill="#3fb950">RAMPART Server</text>
+  <text x="666" y="38" class="label-sub" fill="rgba(63,185,80,0.5)">Docker :8080</text>
+
+  <!-- External Services -->
+  <rect class="cluster-bg" x="945" y="15" width="362" height="380" fill="rgba(210,153,34,0.05)" stroke="rgba(210,153,34,0.15)" stroke-width="1"/>
+  <text x="961" y="38" class="label-cluster" fill="#d29922">External Services</text>
+
+  <!-- Data Layer -->
+  <rect class="cluster-bg" x="360" y="545" width="530" height="310" fill="rgba(188,140,255,0.05)" stroke="rgba(188,140,255,0.15)" stroke-width="1"/>
+  <text x="376" y="568" class="label-cluster" fill="#bc8cff">Persistent Data</text>
+
+  <!-- In-Memory -->
+  <rect class="cluster-bg" x="945" y="445" width="362" height="175" fill="rgba(139,148,158,0.05)" stroke="rgba(139,148,158,0.15)" stroke-width="1"/>
+  <text x="961" y="468" class="label-cluster" fill="#8b949e">In-Memory (per worker)</text>
+
+  <!-- ---- CLIENT NODES ---- -->
+  <!-- Browser Extension -->
+  <rect class="node-rect" x="28" y="52" width="262" height="188" fill="#161b22" stroke="rgba(56,139,253,0.35)" stroke-width="1.5"/>
+  <text x="48" y="75" class="label-title" fill="#58a6ff">Browser Extension</text>
+  <text x="48" y="93" class="label-sub">Chrome / Firefox Manifest V3</text>
+  <line x1="48" y1="102" x2="270" y2="102" stroke="var(--border)" stroke-width="0.5"/>
+  <text x="48" y="120" class="label-sub">popup.js</text>
+  <text x="160" y="120" class="label-sub" fill="#484f58">Enrollment UI</text>
+  <text x="48" y="140" class="label-sub">background.js</text>
+  <text x="160" y="140" class="label-sub" fill="#484f58">Service Worker</text>
+  <text x="48" y="160" class="label-sub">bridge.js</text>
+  <text x="160" y="160" class="label-sub" fill="#484f58">Page IPC</text>
+  <text x="48" y="180" class="label-sub">content.js</text>
+  <text x="160" y="180" class="label-sub" fill="#484f58">Fetch Interception</text>
+  <text x="48" y="200" class="label-sub">styles.css</text>
+  <text x="160" y="200" class="label-sub" fill="#484f58">Violation Overlay</text>
+  <text x="48" y="226" class="label-sub" fill="#484f58">Intercepts prompts on ChatGPT, Claude, Gemini, Ask Sage</text>
+
+  <!-- Admin Browser -->
+  <rect class="node-rect" x="28" y="262" width="262" height="52" fill="#161b22" stroke="rgba(56,139,253,0.35)" stroke-width="1.5"/>
+  <text x="48" y="285" class="label-title" fill="#58a6ff">Admin Browser</text>
+  <text x="48" y="302" class="label-sub">Dashboard &amp; Policy Management</text>
+
+  <!-- MCP Client -->
+  <rect class="node-rect" x="28" y="332" width="262" height="52" fill="#161b22" stroke="rgba(57,208,216,0.35)" stroke-width="1.5"/>
+  <text x="48" y="355" class="label-title" fill="#39d0d8">MCP Client</text>
+  <text x="48" y="372" class="label-sub">Claude Code / AI Agent / Script</text>
+
+  <!-- CAC Workstation -->
+  <rect class="node-rect" x="28" y="402" width="262" height="52" fill="#161b22" stroke="rgba(139,148,158,0.35)" stroke-width="1.5"/>
+  <text x="48" y="425" class="label-title" fill="#8b949e">CAC Workstation</text>
+  <text x="48" y="442" class="label-sub">DoD / Gov mTLS Identity</text>
+
+  <!-- ---- RAMPART SERVER NODES ---- -->
+  <!-- API Endpoints -->
+  <rect class="node-rect" x="376" y="52" width="245" height="150" fill="#161b22" stroke="rgba(63,185,80,0.35)" stroke-width="1.5"/>
+  <text x="396" y="75" class="label-title" fill="#3fb950">API Endpoints</text>
+  <line x1="396" y1="84" x2="601" y2="84" stroke="var(--border)" stroke-width="0.5"/>
+  <text x="396" y="102" class="label-sub">/v1/enroll</text>
+  <text x="396" y="120" class="label-sub">/v1/rampart/evaluate</text>
+  <text x="396" y="138" class="label-sub">/v1/chat/completions</text>
+  <text x="396" y="156" class="label-sub">/v1/extension/config</text>
+  <text x="396" y="174" class="label-sub">/v1/discovery/capture</text>
+  <text x="396" y="192" class="label-sub">/health</text>
+
+  <!-- Policy Engine -->
+  <rect class="node-rect" x="636" y="52" width="240" height="150" fill="#161b22" stroke="rgba(63,185,80,0.55)" stroke-width="2"/>
+  <text x="656" y="75" class="label-title" fill="#3fb950">Policy Engine</text>
+  <line x1="656" y1="84" x2="856" y2="84" stroke="var(--border)" stroke-width="0.5"/>
+  <text x="656" y="104" class="label-sub" fill="#e6edf3">Deterministic</text>
+  <text x="656" y="120" class="label-sub" fill="#484f58">regex, tools, model, max_chars</text>
+  <text x="656" y="142" class="label-sub" fill="#e6edf3">LLM Evaluation</text>
+  <text x="656" y="158" class="label-sub" fill="#484f58">standard + Granite Guardian</text>
+  <text x="656" y="180" class="label-sub" fill="#e6edf3">Vision Evaluation</text>
+  <text x="656" y="196" class="label-sub" fill="#484f58">image content analysis</text>
+
+  <!-- Management -->
+  <rect class="node-rect" x="376" y="222" width="245" height="100" fill="#161b22" stroke="rgba(63,185,80,0.35)" stroke-width="1.5"/>
+  <text x="396" y="245" class="label-title" fill="#3fb950">Management</text>
+  <line x1="396" y1="254" x2="601" y2="254" stroke="var(--border)" stroke-width="0.5"/>
+  <text x="396" y="272" class="label-sub">/ui/*  Admin Dashboard</text>
+  <text x="396" y="290" class="label-sub">/mcp  JSON-RPC 2.0 Server</text>
+  <text x="396" y="308" class="label-sub">/ui/playground  Policy Testing</text>
+
+  <!-- Identity Server -->
+  <rect class="node-rect" x="636" y="222" width="240" height="100" fill="#161b22" stroke="rgba(139,148,158,0.35)" stroke-width="1.5"/>
+  <text x="656" y="245" class="label-title" fill="#8b949e">Identity Server</text>
+  <text x="790" y="245" class="label-sub" fill="#484f58">:8443</text>
+  <line x1="656" y1="254" x2="856" y2="254" stroke="var(--border)" stroke-width="0.5"/>
+  <text x="656" y="272" class="label-sub">/whoami  X.509 cert extraction</text>
+  <text x="656" y="290" class="label-sub">/nonce  challenge-response</text>
+  <text x="656" y="308" class="label-sub">mTLS with CAC authentication</text>
+
+  <!-- Auth & Session -->
+  <rect class="node-rect" x="376" y="342" width="500" height="48" fill="#161b22" stroke="rgba(63,185,80,0.2)" stroke-width="1"/>
+  <text x="396" y="365" class="label-title" fill="#3fb950">Authentication</text>
+  <text x="520" y="365" class="label-sub">Bearer token (API)  |  PBKDF2 session (Admin)  |  mTLS cert (CAC)</text>
+
+  <!-- Request Sanitizer -->
+  <rect class="node-rect" x="376" y="410" width="245" height="48" fill="#161b22" stroke="rgba(63,185,80,0.2)" stroke-width="1"/>
+  <text x="396" y="433" class="label-title" fill="#3fb950">Sanitizer</text>
+  <text x="470" y="433" class="label-sub">Redact secrets, strip tools</text>
+
+  <!-- Tracking -->
+  <rect class="node-rect" x="636" y="410" width="240" height="48" fill="#161b22" stroke="rgba(63,185,80,0.2)" stroke-width="1"/>
+  <text x="656" y="433" class="label-title" fill="#3fb950">Tracking</text>
+  <text x="724" y="433" class="label-sub">JSONL event logging</text>
+
+  <!-- ---- EXTERNAL SERVICE NODES ---- -->
+  <!-- Upstream LLM -->
+  <rect class="node-rect" x="961" y="55" width="330" height="65" fill="#161b22" stroke="rgba(210,153,34,0.35)" stroke-width="1.5"/>
+  <text x="981" y="80" class="label-title" fill="#d29922">Upstream LLM</text>
+  <text x="981" y="98" class="label-sub">OpenAI / Azure / vLLM</text>
+  <text x="981" y="112" class="label-sub" fill="#484f58">Receives proxied chat/completions</text>
+
+  <!-- LLM Evaluator -->
+  <rect class="node-rect" x="961" y="145" width="330" height="65" fill="#161b22" stroke="rgba(210,153,34,0.35)" stroke-width="1.5"/>
+  <text x="981" y="170" class="label-title" fill="#d29922">LLM Evaluator</text>
+  <text x="981" y="188" class="label-sub">Granite Guardian / GPT-4 / Llama Guard</text>
+  <text x="981" y="202" class="label-sub" fill="#484f58">Policy violation analysis</text>
+
+  <!-- Vision Evaluator -->
+  <rect class="node-rect" x="961" y="235" width="330" height="65" fill="#161b22" stroke="rgba(210,153,34,0.35)" stroke-width="1.5"/>
+  <text x="981" y="260" class="label-title" fill="#d29922">Vision Evaluator</text>
+  <text x="981" y="278" class="label-sub">GPT-4 Vision / LLaVA</text>
+  <text x="981" y="292" class="label-sub" fill="#484f58">Image content scanning</text>
+
+  <!-- AI Chat Sites -->
+  <rect class="node-rect" x="961" y="330" width="330" height="50" fill="#161b22" stroke="rgba(210,153,34,0.2)" stroke-width="1"/>
+  <text x="981" y="353" class="label-title" fill="#d29922">AI Chat Sites</text>
+  <text x="981" y="370" class="label-sub">ChatGPT / Claude / Gemini / Ask Sage</text>
+
+  <!-- ---- IN-MEMORY NODES ---- -->
+  <rect class="node-rect" x="961" y="485" width="330" height="40" fill="#161b22" stroke="rgba(139,148,158,0.2)" stroke-width="1"/>
+  <text x="981" y="510" class="label-sub">Evaluation Cache</text>
+  <text x="1130" y="510" class="label-sub" fill="#484f58">TTL 5min, max 1000</text>
+
+  <rect class="node-rect" x="961" y="535" width="330" height="40" fill="#161b22" stroke="rgba(139,148,158,0.2)" stroke-width="1"/>
+  <text x="981" y="560" class="label-sub">Nonce Store</text>
+  <text x="1090" y="560" class="label-sub" fill="#484f58">TTL 2min (mTLS)</text>
+
+  <rect class="node-rect" x="961" y="585" width="330" height="40" fill="#161b22" stroke="rgba(139,148,158,0.2)" stroke-width="1"/>
+  <text x="981" y="610" class="label-sub">Discovery Buffer</text>
+  <text x="1120" y="610" class="label-sub" fill="#484f58">100 per client</text>
+
+  <!-- ---- DATA LAYER NODES ---- -->
+  <rect class="node-rect" x="376" y="580" width="155" height="75" fill="#161b22" stroke="rgba(188,140,255,0.3)" stroke-width="1"/>
+  <text x="392" y="600" class="label-title" fill="#bc8cff">clients.json</text>
+  <text x="392" y="616" class="label-sub">API keys (hashed)</text>
+  <text x="392" y="632" class="label-sub">Client config</text>
+  <text x="392" y="648" class="label-sub" fill="#484f58">Token usage tracking</text>
+
+  <rect class="node-rect" x="546" y="580" width="155" height="75" fill="#161b22" stroke="rgba(188,140,255,0.3)" stroke-width="1"/>
+  <text x="562" y="600" class="label-title" fill="#bc8cff">groups.json</text>
+  <text x="562" y="616" class="label-sub">Enrollment keys</text>
+  <text x="562" y="632" class="label-sub">Policy assignments</text>
+  <text x="562" y="648" class="label-sub" fill="#484f58">Dynamic membership</text>
+
+  <rect class="node-rect" x="716" y="580" width="155" height="75" fill="#161b22" stroke="rgba(188,140,255,0.3)" stroke-width="1"/>
+  <text x="732" y="600" class="label-title" fill="#bc8cff">sites.json</text>
+  <text x="732" y="616" class="label-sub">Extraction patterns</text>
+  <text x="732" y="632" class="label-sub">URL matching rules</text>
+  <text x="732" y="648" class="label-sub" fill="#484f58">Site-specific parsers</text>
+
+  <rect class="node-rect" x="376" y="672" width="155" height="60" fill="#161b22" stroke="rgba(188,140,255,0.3)" stroke-width="1"/>
+  <text x="392" y="695" class="label-title" fill="#bc8cff">policies/</text>
+  <text x="392" y="712" class="label-sub">YAML definitions</text>
+  <text x="392" y="726" class="label-sub" fill="#484f58">OWASP LLM Top 10</text>
+
+  <rect class="node-rect" x="546" y="672" width="155" height="60" fill="#161b22" stroke="rgba(188,140,255,0.3)" stroke-width="1"/>
+  <text x="562" y="695" class="label-title" fill="#bc8cff">settings.json</text>
+  <text x="562" y="712" class="label-sub">Runtime overrides</text>
+  <text x="562" y="726" class="label-sub" fill="#484f58">LLM/Vision config</text>
+
+  <rect class="node-rect" x="716" y="672" width="155" height="60" fill="#161b22" stroke="rgba(188,140,255,0.3)" stroke-width="1"/>
+  <text x="732" y="695" class="label-title" fill="#bc8cff">auth.json</text>
+  <text x="732" y="712" class="label-sub">Admin credentials</text>
+  <text x="732" y="726" class="label-sub" fill="#484f58">PBKDF2 hashed</text>
+
+  <rect class="node-rect" x="376" y="752" width="240" height="52" fill="#161b22" stroke="rgba(188,140,255,0.3)" stroke-width="1"/>
+  <text x="392" y="775" class="label-title" fill="#bc8cff">evaluations.jsonl</text>
+  <text x="392" y="792" class="label-sub">Prompt evaluation events (append-only)</text>
+
+  <rect class="node-rect" x="636" y="752" width="235" height="52" fill="#161b22" stroke="rgba(188,140,255,0.3)" stroke-width="1"/>
+  <text x="652" y="775" class="label-title" fill="#bc8cff">audit.jsonl</text>
+  <text x="652" y="792" class="label-sub">Admin action trail (append-only)</text>
+
+  <!-- ---- VOLUME LABELS ---- -->
+  <text x="376" y="835" class="label-sub" fill="#484f58">Docker Volume: rampart-data (JSON stores) | rampart-logs (JSONL events) | ./policies (bind mount)</text>
+
+  <!-- ====== CONNECTIONS ====== -->
+  <!-- Extension -> API Endpoints (evaluate/enroll) -->
+  <path class="conn" d="M 290 105 C 330 105, 340 100, 376 100" stroke="#58a6ff" stroke-opacity="0.6" marker-end="url(#ah-blue)"/>
+  <text x="305" y="95" class="conn-label" fill="#58a6ff">evaluate</text>
+  <text x="305" y="108" class="conn-label" fill="#58a6ff">enroll</text>
+
+  <!-- Extension -> AI Chat Sites (bidirectional: intercepts) -->
+  <path class="conn" d="M 159 240 C 159 290, 920 355, 961 355" stroke="#58a6ff" stroke-opacity="0.3" stroke-dasharray="4,4" marker-end="url(#ah-blue)"/>
+  <text x="520" y="280" class="conn-label" fill="#58a6ff">intercepts prompts to chat sites</text>
+
+  <!-- Admin -> Management -->
+  <path class="conn" d="M 290 288 C 330 288, 340 272, 376 272" stroke="#58a6ff" stroke-opacity="0.6" marker-end="url(#ah-blue)"/>
+  <text x="300" y="277" class="conn-label" fill="#58a6ff">session auth</text>
+
+  <!-- MCP Client -> Management -->
+  <path class="conn" d="M 290 358 C 330 358, 340 300, 376 300" stroke="#39d0d8" stroke-opacity="0.6" marker-end="url(#ah-teal)"/>
+  <text x="300" y="336" class="conn-label" fill="#39d0d8">JSON-RPC</text>
+
+  <!-- CAC -> Identity -->
+  <path class="conn" d="M 290 428 C 420 428, 500 290, 636 280" stroke="#8b949e" stroke-opacity="0.5" marker-end="url(#ah)"/>
+  <text x="410" y="385" class="conn-label" fill="#8b949e">mTLS :8443</text>
+
+  <!-- API -> Policy Engine (internal) -->
+  <path class="conn" d="M 621 127 L 636 127" stroke="rgba(63,185,80,0.4)" stroke-width="1.5" marker-end="url(#ah-green)"/>
+
+  <!-- API (gateway) -> Upstream LLM -->
+  <path class="conn" d="M 621 138 C 780 138, 870 87, 961 87" stroke="#d29922" stroke-opacity="0.6" marker-end="url(#ah-orange)"/>
+  <text x="770" y="97" class="conn-label" fill="#d29922">proxy if accepted</text>
+
+  <!-- Policy Engine -> LLM Evaluator -->
+  <path class="conn" d="M 876 145 C 910 145, 930 177, 961 177" stroke="#d29922" stroke-opacity="0.6" marker-end="url(#ah-orange)"/>
+  <text x="895" y="150" class="conn-label" fill="#d29922">analyze</text>
+
+  <!-- Policy Engine -> Vision Evaluator -->
+  <path class="conn" d="M 876 185 C 910 185, 930 267, 961 267" stroke="#d29922" stroke-opacity="0.6" marker-end="url(#ah-orange)"/>
+  <text x="895" y="228" class="conn-label" fill="#d29922">scan</text>
+
+  <!-- Server -> Data Layer -->
+  <path class="conn" d="M 625 458 L 625 580" stroke="#bc8cff" stroke-opacity="0.3" stroke-dasharray="4,4" marker-end="url(#ah-purple)"/>
+  <text x="632" y="520" class="conn-label" fill="#bc8cff">persist</text>
+
+  <!-- Tracking -> Logs -->
+  <path class="conn" d="M 756 458 C 756 520, 590 530, 496 580" stroke="#bc8cff" stroke-opacity="0.2" stroke-dasharray="4,4"/>
+</svg>
+</div>
+</div>
+
+<!-- ================================================================ -->
+<!-- TAB 2: EVALUATION PIPELINE                                       -->
+<!-- ================================================================ -->
+<div class="tab-panel" id="pipeline">
+<div class="pipeline">
+
+  <div class="phase-label browser">Browser Extension</div>
+
+  <div class="step" style="--accent: var(--blue);">
+    <div class="step-num">1</div>
+    <h3>Page Interception</h3>
+    <p>User visits a supported AI chat site. Extension injects <code>bridge.js</code> into the page, which loads <code>content.js</code>. Content script hooks into <code>fetch()</code> and <code>XMLHttpRequest</code>, monitors clipboard paste and drag-drop events for images.</p>
+    <div>
+      <span class="detail">chatgpt.com</span>
+      <span class="detail">claude.ai</span>
+      <span class="detail">gemini.google.com</span>
+      <span class="detail">chat.asksage.com</span>
+    </div>
+  </div>
+
+  <div class="step" style="--accent: var(--blue);">
+    <div class="step-num">2</div>
+    <h3>Prompt Capture</h3>
+    <p>User types a prompt and clicks "Send". The hooked fetch/XHR is intercepted before it leaves the browser. Extension extracts the prompt text using site-specific parsing rules and captures any pasted/dropped images as base64 data URLs.</p>
+    <div>
+      <span class="detail">ChatGPT: messages[0].content.parts</span>
+      <span class="detail">Ask Sage: JSON[].message</span>
+      <span class="detail">Gemini: FormData f.req</span>
+      <span class="detail">Claude: body.prompt</span>
+    </div>
+  </div>
+
+  <div class="step" style="--accent: var(--blue);">
+    <div class="step-num">3</div>
+    <h3>Build Evaluation Request</h3>
+    <p>Extension constructs an OpenAI-compatible evaluation request with the extracted prompt text, detected model name, and any captured image content.</p>
+  </div>
+
+  <div class="boundary">POST /v1/rampart/evaluate  &mdash;  Authorization: Bearer &lt;api_key&gt;</div>
+
+  <div class="phase-label server">RAMPART Server</div>
+
+  <div class="step" style="--accent: var(--green);">
+    <div class="step-num">4</div>
+    <h3>Client Resolution</h3>
+    <p>Match the Bearer token against the PBKDF2-hashed key store. Verify the client is enabled, update <code>last_used_at</code> timestamp and increment <code>total_evaluations</code> counter.</p>
+  </div>
+
+  <div class="step" style="--accent: var(--green);">
+    <div class="step-num">5</div>
+    <h3>Policy Resolution</h3>
+    <p>Determine which policies apply to this client. If the client belongs to a group, use the group's dynamically assigned policies. Otherwise fall back to directly assigned policies, or all enabled policies if none are assigned.</p>
+  </div>
+
+  <div class="step" style="--accent: var(--green);">
+    <div class="step-num">6</div>
+    <h3>Deterministic Checks</h3>
+    <p>Run fast, synchronous checks against all applicable policies. These execute in microseconds and catch obvious violations immediately.</p>
+    <div>
+      <span class="detail">regex pattern matching</span>
+      <span class="detail">tool allowlist/denylist</span>
+      <span class="detail">model allowlist</span>
+      <span class="detail">max message size (chars)</span>
+    </div>
+  </div>
+
+  <div class="decision">
+    <h3>Blocking violation found?</h3>
+    <p>If any deterministic check triggers a <code>block</code> action &rarr; fail fast and skip expensive LLM/vision evaluation</p>
+  </div>
+
+  <div style="text-align:center; margin: 8px 0; font-size:0.75rem; color:var(--text-dim);">No blocking violations &mdash; continue to async evaluation</div>
+
+  <div class="branch">
+    <div class="branch-item" style="--accent: var(--orange);">
+      <h4 style="color:var(--orange);">LLM Evaluation</h4>
+      <p>For each policy with <code>type: llm</code> checks, send the prompt to the LLM evaluator.</p>
+      <p style="margin-top:6px;"><strong style="color:var(--text);font-size:0.8rem;">Standard mode:</strong> <span style="font-size:0.8rem;">Full JSON &rarr; LLM &rarr; {violates, message}</span></p>
+      <p><strong style="color:var(--text);font-size:0.8rem;">Granite Guardian:</strong> <span style="font-size:0.8rem;">Text &rarr; logprobs &rarr; Yes/No threshold</span></p>
+    </div>
+    <div class="branch-label">parallel</div>
+    <div class="branch-item" style="--accent: var(--orange);">
+      <h4 style="color:var(--orange);">Vision Evaluation</h4>
+      <p>For each image in the request (unless <code>skip_vision</code> is set), send the base64 image to the vision evaluator LLM with policy instructions.</p>
+      <p style="margin-top:6px;font-size:0.8rem;">Returns: <code>{violates, message}</code> per image</p>
+    </div>
+  </div>
+
+  <div class="step" style="--accent: var(--green);">
+    <div class="step-num">7</div>
+    <h3>Aggregate &amp; Deduplicate</h3>
+    <p>Merge all violations from deterministic, LLM, and vision evaluators. Deduplicate by <code>(policy_id, path, message)</code> tuple. Each violation carries: policy_id, severity, category, message, source, and content path.</p>
+  </div>
+
+  <div class="step" style="--accent: var(--green);">
+    <div class="step-num">8</div>
+    <h3>Decision</h3>
+    <p>If <em>any</em> violation has <code>action: block</code> &rarr; decision is <strong style="color:var(--red);">"fail"</strong>. If only warnings or no violations &rarr; decision is <strong style="color:var(--green);">"accept"</strong>. Warnings are returned separately.</p>
+  </div>
+
+  <div class="step" style="--accent: var(--purple);">
+    <div class="step-num">9</div>
+    <h3>Log &amp; Track</h3>
+    <p>Append evaluation event to <code>evaluations.jsonl</code> with timestamp, client ID, decision, violations, and applied policies. Update client counters: <code>total_evaluations</code>, <code>total_violations</code>.</p>
+  </div>
+
+  <div class="boundary">HTTP Response &mdash; JSON {decision, violations, warnings}</div>
+
+  <div class="phase-label response">Extension Response Handling</div>
+
+  <div class="decision">
+    <h3>Extension Decision Point</h3>
+    <p>The extension reads the <code>decision</code> field from the RAMPART response</p>
+  </div>
+
+  <div class="outcome-split">
+    <div class="outcome block">
+      <div class="icon">&#x1F6D1;</div>
+      <h4>BLOCK</h4>
+      <p>Suppress the original fetch/XHR request. Display a violation overlay modal showing policy name, severity, and description. User must click "Acknowledged" to dismiss.</p>
+      <p style="margin-top:8px;"><strong style="color:var(--red);">Prompt is NEVER sent to the AI service.</strong></p>
+    </div>
+    <div class="outcome allow">
+      <div class="icon">&#x2705;</div>
+      <h4>ALLOW</h4>
+      <p>Release the original fetch/XHR request. The prompt proceeds to the AI chat site as normal. The user's interaction is uninterrupted.</p>
+      <p style="margin-top:8px;"><strong style="color:var(--green);">AI responds normally.</strong></p>
+    </div>
+  </div>
+
+</div>
+
+<div class="legend">
+  <h4>Legend</h4>
+  <div class="legend-grid">
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--blue);"></div>Browser / Client</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--green);"></div>RAMPART Server</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--orange);"></div>External LLM Services</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--purple);"></div>Data / Logging</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--red);"></div>Block / Fail</div>
+    <div class="legend-item"><div class="legend-swatch" style="border:1px dashed var(--text-dim);"></div>Optional / Conditional</div>
+  </div>
+</div>
+</div>
+
+<!-- ================================================================ -->
+<!-- TAB 3: ENROLLMENT FLOW                                           -->
+<!-- ================================================================ -->
+<div class="tab-panel" id="enrollment">
+<div class="enroll-pipeline">
+
+  <div class="phase-label">User Action</div>
+
+  <div class="step">
+    <div class="step-num">1</div>
+    <h3>Open Extension Popup</h3>
+    <p>User clicks the RAMPART extension icon in their browser toolbar. The popup UI presents enrollment fields.</p>
+  </div>
+
+  <div class="step">
+    <div class="step-num">2</div>
+    <h3>Enter Enrollment Details</h3>
+    <p>User provides: RAMPART server URL, group enrollment key (from their admin), and optionally their email address. A unique device ID is auto-generated.</p>
+    <div>
+      <span class="detail">RAMPART URL</span>
+      <span class="detail">Group Enrollment Key</span>
+      <span class="detail">Email (optional)</span>
+      <span class="detail">Device ID (auto)</span>
+    </div>
+  </div>
+
+  <div class="boundary">POST /v1/enroll  &mdash;  {enrollment_key, user_email, device_id}</div>
+
+  <div class="phase-label" style="color:var(--green);">RAMPART Server</div>
+
+  <div class="step" style="--accent: var(--green);">
+    <div class="step-num">3</div>
+    <h3>Rate Limit Check</h3>
+    <p>Verify the enrollment request doesn't exceed rate limits. Prevents brute-force key guessing.</p>
+  </div>
+
+  <div class="step" style="--accent: var(--green);">
+    <div class="step-num">4</div>
+    <h3>Match Enrollment Key to Group</h3>
+    <p>Look up the provided enrollment key across all groups. The key must match an enabled group's <code>enrollment_key</code> field.</p>
+  </div>
+
+  <div class="step" style="--accent: var(--green);">
+    <div class="step-num">5</div>
+    <h3>Create Client Record</h3>
+    <p>Generate a new API key, hash it with PBKDF2, and create a client record assigned to the matched group. If re-enrolling (same device_id), the existing client is updated with a new key.</p>
+    <div>
+      <span class="detail">API key generated</span>
+      <span class="detail">PBKDF2 hash stored</span>
+      <span class="detail">Group policies inherited</span>
+      <span class="detail">Saved to clients.json</span>
+    </div>
+  </div>
+
+  <div class="step" style="--accent: var(--green);">
+    <div class="step-num">6</div>
+    <h3>Return Plaintext API Key</h3>
+    <p>The newly generated API key is returned once in plaintext. This is the only time it's visible &mdash; the server only stores the hash.</p>
+  </div>
+
+  <div class="boundary">HTTP Response &mdash; {api_key, client_id, group_name}</div>
+
+  <div class="phase-label">Extension Stores Credentials</div>
+
+  <div class="step">
+    <div class="step-num">7</div>
+    <h3>Persist in Browser Storage</h3>
+    <p>Extension saves the API key and RAMPART URL to <code>chrome.storage.sync</code> (or Firefox equivalent). These persist across browser sessions and sync across devices.</p>
+  </div>
+
+  <div class="step">
+    <div class="step-num">8</div>
+    <h3>Extension Active</h3>
+    <p>Popup shows "Enrolled" status with the group name. The extension is now active on all supported AI chat sites and will evaluate prompts before they're sent.</p>
+    <div>
+      <span class="detail">API key in Authorization header</span>
+      <span class="detail">Site configs fetched on page load</span>
+      <span class="detail">Live CSS/JS updates from server</span>
+    </div>
+  </div>
+
+  <div style="margin-top:24px; padding:16px; background:var(--teal-bg); border:1px solid rgba(57,208,216,0.25); border-radius:10px;">
+    <h4 style="color:var(--teal); font-size:0.85rem;">Optional: CAC Identity Binding</h4>
+    <p style="font-size:0.8rem; color:var(--text-dim); margin-top:4px;">If the RAMPART server has mTLS enabled on port 8443, the extension can additionally call <code>/whoami</code> to bind the enrollment to a CAC certificate identity (X.509 subject). This provides cryptographic proof of the user's identity for DoD/Gov environments.</p>
+  </div>
+
+</div>
+
+<div class="legend">
+  <h4>Enrollment Security</h4>
+  <div class="legend-grid">
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--teal);"></div>Group enrollment key = shared secret</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--green);"></div>API key = per-client, PBKDF2 hashed</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--orange);"></div>Rate limiting prevents key brute-force</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--purple);"></div>Re-enrollment rotates the API key</div>
+  </div>
+</div>
+</div>
+
+<!-- ================================================================ -->
+<!-- TAB 4: DETAILED SWIM LANE FLOW                                   -->
+<!-- ================================================================ -->
+<div class="tab-panel" id="detailed">
+<p class="swim-intro">
+  Step-by-step browser plugin evaluation flow across all three actors, matching the full logical process from page load through final decision.
+</p>
+
+<div class="swim">
+  <!-- Column Headers -->
+  <div class="swim-head" style="color:var(--blue); border-bottom-color:var(--blue);">User Action</div>
+  <div class="swim-head" style="color:var(--teal); border-bottom-color:var(--teal);">Browser Extension</div>
+  <div class="swim-head" style="color:var(--green); border-bottom-color:var(--green);">RAMPART Server</div>
+
+  <!-- ============================================================ -->
+  <div class="swim-phase" style="color:var(--blue);">Phase 1 &mdash; Page Load &amp; Initialization</div>
+  <!-- ============================================================ -->
+
+  <!-- User visits site -->
+  <div class="swim-cell"><div class="swim-card u">
+    <h4>Visit AI Chat Site</h4>
+    <p>User navigates to a supported AI service in their browser.</p>
+    <div><span class="sub">chatgpt.com</span><span class="sub">claude.ai</span><span class="sub">gemini.google.com</span><span class="sub">chat.asksage.com</span></div>
+  </div></div>
+  <div class="swim-cell"></div>
+  <div class="swim-cell"></div>
+
+  <!-- Page loads -->
+  <div class="swim-cell"><div class="swim-card u"><p>Page loads in browser</p></div></div>
+  <div class="swim-cell"><div class="swim-card e">
+    <h4>bridge.js Injects</h4>
+    <p>Extension injects <code>bridge.js</code> into the page via <code>&lt;script&gt;</code> tag. Establishes IPC channel using <code>window.postMessage</code>.</p>
+  </div></div>
+  <div class="swim-cell"></div>
+
+  <!-- content.js activates -->
+  <div class="swim-cell"></div>
+  <div class="swim-cell"><div class="swim-card e">
+    <h4>content.js Activates</h4>
+    <p>Loaded by bridge. Needs site-specific extraction rules from the RAMPART server before it can intercept prompts.</p>
+  </div></div>
+  <div class="swim-cell"></div>
+
+  <!-- Extension → Server: GET config -->
+  <div class="swim-xfer to-srv"><span class="xf">GET /v1/extension/config &mdash; Bearer &lt;api_key&gt; &nbsp;&#x2192;</span></div>
+
+  <!-- Server returns config -->
+  <div class="swim-cell"></div>
+  <div class="swim-cell"></div>
+  <div class="swim-cell"><div class="swim-card s">
+    <h4>Resolve Client &amp; Return Config</h4>
+    <p>Match API key against client store. Return site extraction patterns for this client's matched hostnames, plus discovery status flags.</p>
+  </div></div>
+
+  <!-- Server → Extension: response -->
+  <div class="swim-xfer to-ext"><span class="xf">&#x2190;&nbsp; Site patterns + discovery status</span></div>
+
+  <!-- Extension stores rules and hooks -->
+  <div class="swim-cell"></div>
+  <div class="swim-cell"><div class="swim-card e">
+    <h4>Store Extraction Rules</h4>
+    <p>Cache site-specific parsing rules keyed by matched hostname. Ready for interception.</p>
+  </div></div>
+  <div class="swim-cell"></div>
+
+  <div class="swim-cell"></div>
+  <div class="swim-cell"><div class="swim-card e">
+    <h4>Hook Into Page</h4>
+    <p>Override the browser's native network APIs and input events to intercept any outbound AI requests:</p>
+    <div><span class="sub">Override fetch()</span><span class="sub">Override XMLHttpRequest</span><span class="sub">Monitor clipboard paste</span><span class="sub">Monitor drag/drop images</span></div>
+  </div></div>
+  <div class="swim-cell"></div>
+
+  <!-- Wait -->
+  <div class="swim-wait">Extension is active &mdash; waiting for user to submit a prompt...</div>
+
+  <!-- ============================================================ -->
+  <div class="swim-phase" style="color:var(--teal);">Phase 2 &mdash; Prompt Interception &amp; Extraction</div>
+  <!-- ============================================================ -->
+
+  <!-- User submits -->
+  <div class="swim-cell"><div class="swim-card u">
+    <h4>Type Prompt &amp; Click "Send"</h4>
+    <p>User composes their message and submits it to the AI chat interface.</p>
+  </div></div>
+  <div class="swim-cell"><div class="swim-card e" style="border-left-color:var(--orange);">
+    <h4>Intercepted!</h4>
+    <p>The hooked <code>fetch()</code> or <code>XMLHttpRequest</code> fires. The request is trapped <strong>before it leaves the browser</strong>.</p>
+  </div></div>
+  <div class="swim-cell"></div>
+
+  <!-- Extract prompt -->
+  <div class="swim-cell"></div>
+  <div class="swim-cell"><div class="swim-card e">
+    <h4>Extract Prompt Text</h4>
+    <p>Apply the cached site-specific extraction rules to parse the prompt from the intercepted request body:</p>
+    <div>
+      <span class="sub">ChatGPT: messages[0].content.parts[0]</span>
+      <span class="sub">Ask Sage: JSON array[].message</span>
+      <span class="sub">Gemini: FormData f.req deep parse</span>
+      <span class="sub">Claude: body.prompt</span>
+    </div>
+  </div></div>
+  <div class="swim-cell"></div>
+
+  <!-- Extract images -->
+  <div class="swim-cell"></div>
+  <div class="swim-cell"><div class="swim-card e">
+    <h4>Extract Images</h4>
+    <p>Collect any image content that was captured from user input events:</p>
+    <div>
+      <span class="sub">Pasted images (base64 from clipboard)</span>
+      <span class="sub">Dropped images (base64 from drag/drop)</span>
+      <span class="sub">Inline image URLs in content</span>
+    </div>
+  </div></div>
+  <div class="swim-cell"></div>
+
+  <!-- Build request -->
+  <div class="swim-cell"></div>
+  <div class="swim-cell"><div class="swim-card e">
+    <h4>Build Evaluation Request</h4>
+    <p>Construct an OpenAI-compatible evaluation payload with extracted prompt, detected model, and image content:</p>
+    <pre>{
+  "request": {
+    "model": "&lt;detected&gt;",
+    "messages": [{
+      "role": "user",
+      "content": "&lt;extracted text&gt;"
+    }]
+  }
+}</pre>
+  </div></div>
+  <div class="swim-cell"></div>
+
+  <!-- Extension → Server: evaluate -->
+  <div class="swim-xfer to-srv"><span class="xf">POST /v1/rampart/evaluate &mdash; Authorization: Bearer &lt;api_key&gt; &nbsp;&#x2192;</span></div>
+
+  <!-- ============================================================ -->
+  <div class="swim-phase" style="color:var(--green);">Phase 3 &mdash; RAMPART Evaluation Pipeline</div>
+  <!-- ============================================================ -->
+
+  <!-- Step 1: Resolve Client -->
+  <div class="swim-cell"></div>
+  <div class="swim-cell"></div>
+  <div class="swim-cell"><div class="swim-card s">
+    <h4>1. Resolve Client</h4>
+    <p>Match the <code>Bearer</code> token against the PBKDF2 <code>key_hash</code> store. Verify <code>client.enabled = true</code>. Update <code>last_used_at</code> timestamp.</p>
+  </div></div>
+
+  <!-- Step 2: Resolve Policies -->
+  <div class="swim-cell"></div>
+  <div class="swim-cell"></div>
+  <div class="swim-cell"><div class="swim-card s">
+    <h4>2. Resolve Policies</h4>
+    <p>Determine which policies to enforce for this client:</p>
+    <div>
+      <span class="sub">client.group_id set? &#x2192; use group.policy_ids</span>
+      <span class="sub">client.policy_ids set? &#x2192; use those</span>
+      <span class="sub">Neither? &#x2192; use ALL enabled policies</span>
+    </div>
+  </div></div>
+
+  <!-- Step 3: Deterministic Checks -->
+  <div class="swim-cell"></div>
+  <div class="swim-cell"></div>
+  <div class="swim-cell"><div class="swim-card s">
+    <h4>3. Deterministic Checks</h4>
+    <p>Run fast, synchronous checks for each applicable policy. Execute in microseconds:</p>
+    <div>
+      <span class="sub">regex: scan all message content for patterns</span>
+      <span class="sub">max_chars: check total message length</span>
+      <span class="sub">tool_allowlist: verify requested tools are permitted</span>
+      <span class="sub">tool_denylist: block forbidden tools</span>
+      <span class="sub">model_allowlist: verify requested model is allowed</span>
+    </div>
+  </div></div>
+
+  <!-- Decision: blocking violation? -->
+  <div class="swim-cell"></div>
+  <div class="swim-cell"></div>
+  <div class="swim-cell"><div class="swim-card dec">
+    <h4 style="color:var(--orange);">Blocking violation found?</h4>
+    <p style="margin-top:6px;"><strong style="color:var(--red);">YES &#x2192;</strong> FAIL FAST &mdash; skip expensive LLM/vision evaluation, jump to step 6</p>
+    <p><strong style="color:var(--green);">NO &#x2192;</strong> continue to async evaluation below</p>
+  </div></div>
+
+  <!-- Step 4: Parallel LLM + Vision -->
+  <div class="swim-cell"></div>
+  <div class="swim-cell"></div>
+  <div class="swim-cell">
+    <div class="par-wrap">
+      <div class="swim-card s">
+        <h4>4a. LLM Evaluation</h4>
+        <p>For each policy with <code>type: llm</code> checks:</p>
+        <p style="margin-top:4px;"><strong style="color:var(--text); font-size:0.75rem;">Standard mode:</strong></p>
+        <p>Full JSON request &#x2192; LLM &#x2192; <code>{violates, message}</code></p>
+        <p style="margin-top:4px;"><strong style="color:var(--text); font-size:0.75rem;">Granite Guardian mode:</strong></p>
+        <p>Extract text &#x2192; logprobs &#x2192; Yes/No binary classification against confidence threshold</p>
+      </div>
+      <div class="swim-card s">
+        <h4>4b. Vision Evaluation</h4>
+        <p>For each image in the request (unless <code>skip_vision</code> is set on the policy):</p>
+        <p style="margin-top:4px;">Send base64 image to vision evaluator LLM with policy-specific instructions.</p>
+        <p style="margin-top:4px;">Returns per image: <code>{violates, message}</code></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="swim-note">&#x2191; 4a and 4b execute in parallel (async) &#x2191;</div>
+
+  <!-- Step 5: Aggregate -->
+  <div class="swim-cell"></div>
+  <div class="swim-cell"></div>
+  <div class="swim-cell"><div class="swim-card s">
+    <h4>5. Aggregate &amp; Deduplicate</h4>
+    <p>Merge all violations from deterministic + LLM + vision evaluators. Deduplicate by <code>(policy_id, path, message)</code> tuple.</p>
+    <p style="margin-top:4px;">Each violation carries:</p>
+    <pre>{ policy_id, severity, category,
+  message, source, path }</pre>
+  </div></div>
+
+  <!-- Step 6: Decision -->
+  <div class="swim-cell"></div>
+  <div class="swim-cell"></div>
+  <div class="swim-cell"><div class="swim-card s">
+    <h4>6. Decision</h4>
+    <p>Any violation with <code>action: block</code>?</p>
+    <p style="margin-top:3px;">&#x2192; <strong style="color:var(--red);">decision = "fail"</strong></p>
+    <p>Only warnings or no violations?</p>
+    <p>&#x2192; <strong style="color:var(--green);">decision = "accept"</strong></p>
+    <p style="margin-top:4px;">Warnings are returned separately from blocking violations.</p>
+  </div></div>
+
+  <!-- Step 7: Log -->
+  <div class="swim-cell"></div>
+  <div class="swim-cell"></div>
+  <div class="swim-cell"><div class="swim-card log">
+    <h4>7. Log &amp; Track</h4>
+    <p>Append evaluation event to <code>evaluations.jsonl</code>:</p>
+    <div>
+      <span class="sub">timestamp</span><span class="sub">client_id</span><span class="sub">decision</span>
+      <span class="sub">violations[]</span><span class="sub">applied_policies[]</span>
+    </div>
+    <p style="margin-top:6px;">Update client counters: <code>total_evaluations++</code>, <code>total_violations++</code></p>
+  </div></div>
+
+  <!-- Step 8: Return Response -->
+  <div class="swim-cell"></div>
+  <div class="swim-cell"></div>
+  <div class="swim-cell"><div class="swim-card s">
+    <h4>8. Return Response</h4>
+    <pre>{
+  "decision": "fail" | "accept",
+  "violations": [
+    { "policy_id": "...",
+      "severity": "high",
+      "category": "...",
+      "message": "...",
+      "source": "deterministic|llm|vision",
+      "path": "messages[0].content" }
+  ],
+  "warnings": [...]
+}</pre>
+  </div></div>
+
+  <!-- Server → Extension: response -->
+  <div class="swim-xfer to-ext"><span class="xf">&#x2190;&nbsp; HTTP Response &mdash; JSON {decision, violations, warnings}</span></div>
+
+  <!-- ============================================================ -->
+  <div class="swim-phase" style="color:var(--purple);">Phase 4 &mdash; Extension Response Handling</div>
+  <!-- ============================================================ -->
+
+  <!-- Extension decision point -->
+  <div class="swim-cell"></div>
+  <div class="swim-cell"><div class="swim-card dec" style="border-left-color:var(--orange);">
+    <h4 style="color:var(--orange);">Extension Decision Point</h4>
+    <p>Read the <code>decision</code> field from the RAMPART response</p>
+  </div></div>
+  <div class="swim-cell"></div>
+
+  <!-- Outcomes: full width split -->
+  <div class="swim-full">
+    <div style="display:flex; gap:12px; margin-top:4px;">
+      <!-- BLOCK -->
+      <div style="flex:1;">
+        <div class="swim-card blk" style="padding:16px;">
+          <h4 style="color:var(--red); font-size:0.9rem; text-align:center; margin-bottom:8px;">BLOCK &mdash; decision = "fail"</h4>
+          <p><strong style="color:var(--text);">1.</strong> Suppress the original <code>fetch()</code> / XHR request &mdash; it never leaves the browser.</p>
+          <p style="margin-top:6px;"><strong style="color:var(--text);">2.</strong> Display violation modal overlay to the user showing:</p>
+          <div style="margin:6px 0;">
+            <span class="sub">Policy name</span><span class="sub">Severity level</span>
+            <span class="sub">Description</span><span class="sub">Original prompt text</span>
+          </div>
+          <p style="margin-top:6px;"><strong style="color:var(--text);">3.</strong> User sees the overlay and must click <strong>"Acknowledged"</strong> to dismiss it.</p>
+          <p style="margin-top:6px;"><strong style="color:var(--text);">4.</strong> Overlay dismissed. User may retype their prompt.</p>
+          <p style="margin-top:10px; text-align:center; padding:8px; background:rgba(248,81,73,0.15); border-radius:6px;">
+            <strong style="color:var(--red);">Prompt is NEVER sent to the AI service.</strong>
+          </p>
+        </div>
+      </div>
+      <!-- ALLOW -->
+      <div style="flex:1;">
+        <div class="swim-card ok" style="padding:16px;">
+          <h4 style="color:var(--green); font-size:0.9rem; text-align:center; margin-bottom:8px;">ALLOW &mdash; decision = "accept"</h4>
+          <p><strong style="color:var(--text);">1.</strong> Release the original <code>fetch()</code> / XHR request.</p>
+          <p style="margin-top:6px;"><strong style="color:var(--text);">2.</strong> The prompt proceeds to the AI chat site as normal.</p>
+          <p style="margin-top:6px;"><strong style="color:var(--text);">3.</strong> Request is delivered to ChatGPT / Claude / Gemini / Ask Sage.</p>
+          <p style="margin-top:6px;"><strong style="color:var(--text);">4.</strong> User's interaction is completely uninterrupted.</p>
+          <p style="margin-top:10px; text-align:center; padding:8px; background:rgba(63,185,80,0.15); border-radius:6px;">
+            <strong style="color:var(--green);">AI responds normally.</strong>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Severity reference -->
+<div class="legend" style="max-width:860px;">
+  <h4>Policy Severity &amp; Actions</h4>
+  <div class="legend-grid" style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));">
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--red);"></div><strong>critical</strong> &mdash; always block</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--orange);"></div><strong>high</strong> &mdash; block</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#e3b341;"></div><strong>medium</strong> &mdash; block or warn</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--text-dim);"></div><strong>low</strong> &mdash; warn only</div>
+  </div>
+  <div class="legend-grid" style="margin-top:12px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));">
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--blue);"></div>User Action (browser side)</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--teal);"></div>Browser Extension (client-side logic)</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--green);"></div>RAMPART Server (evaluation pipeline)</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--purple);"></div>Logging &amp; Persistence</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:var(--orange);"></div>External LLM / Decision Points</div>
+  </div>
+</div>
+
+</div>
+
+<script>
+  // Tab switching
+  document.querySelectorAll('nav button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(btn.dataset.tab).classList.add('active');
+    });
+  });
+</script>
+</body>
+</html>
