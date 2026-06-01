@@ -21,7 +21,7 @@ from rampart.app.group_mapping_store import (
     delete_mapping as store_delete_mapping,
 )
 from rampart.app.policy_store import delete_policy, get_policy, upsert_policy
-from rampart.app.prompt_log import get_entries as get_prompt_log_entries, get_entry_count as get_prompt_log_count
+from rampart.app.prompt_log import get_entries as get_prompt_log_entries, get_entry_count as get_prompt_log_count, clear as clear_prompt_log
 from rampart.app.security.audit import audit_event
 from rampart.app.security.auth import authenticate, clear_session_cookie, read_session_user, require_ui_user, set_session_cookie
 from rampart.app.security.credentials import change_password
@@ -158,77 +158,27 @@ async def policies_index(request: Request, message: Optional[str] = None, error:
 
 
 @router.get("/ui/violations", response_class=HTMLResponse)
-async def violations_index(request: Request, customer: Optional[str] = None, client_id: Optional[str] = None) -> HTMLResponse:
-    redirect = require_ui_user(request)
-    if redirect:
-        audit_event(request, "ui.unauthorized", result="failure", target="/ui/violations")
-        return redirect
-
-    config = get_config()
-    events = load_evaluation_events(config.tracking.log_path)
-    customer_rows = "\n".join(_customer_summary_row(summary) for summary in summarize_customers(events))
-    policy_rows = "\n".join(_policy_summary_row(summary) for summary in summarize_policies(events, customer, client_id))
-    selected = ""
-    if customer or client_id:
-        selected = f"<p>Filtered by customer <code>{escape(customer or '*')}</code> and client <code>{escape(client_id or '*')}</code>.</p>"
-    body = f"""
-      <section class="toolbar">
-        <div>
-          <h1>Violations</h1>
-          <p>{escape(config.tracking.log_path)}</p>
-          {selected}
-        </div>
-      </section>
-      {_violation_stats_cards(events)}
-      <section class="panel">
-        <table>
-          <thead>
-            <tr>
-              <th>Customer</th>
-              <th>Client</th>
-              <th>Failed Requests</th>
-              <th>Violations</th>
-              <th>High/Critical</th>
-              <th>Last Seen</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>{customer_rows or _empty_row(7, "No violation events recorded yet.")}</tbody>
-        </table>
-      </section>
-      <section class="toolbar secondary">
-        <div>
-          <h1>Policy Breakdown</h1>
-          <p>Counts are grouped by customer, client, policy, severity, and category.</p>
-        </div>
-      </section>
-      <section class="panel">
-        <table>
-          <thead>
-            <tr>
-              <th>Customer</th>
-              <th>Client</th>
-              <th>Policy</th>
-              <th>Severity</th>
-              <th>Category</th>
-              <th>Count</th>
-              <th>Last Seen</th>
-            </tr>
-          </thead>
-          <tbody>{policy_rows or _empty_row(7, "No policy violations match this view.")}</tbody>
-        </table>
-      </section>
-    """
-    return HTMLResponse(_page("RAMPART Violations", body, read_session_user(request)))
+async def violations_redirect(request: Request) -> RedirectResponse:
+    return RedirectResponse("/ui/prompt-log", status_code=301)
 
 
 @router.get("/ui/prompt-log", response_class=HTMLResponse)
-async def prompt_log_page(request: Request) -> HTMLResponse:
+async def prompt_log_page(request: Request, message: Optional[str] = None) -> HTMLResponse:
     redirect = require_ui_user(request)
     if redirect:
         return redirect
     entries = get_prompt_log_entries(limit=500)
     total = get_prompt_log_count()
+    failed_entries = [e for e in entries if e.decision == "fail"]
+    total_violations = sum(len(e.violations) for e in failed_entries)
+    high_critical = sum(
+        1 for e in failed_entries for v in e.violations
+        if v.get("severity") in ("high", "critical")
+    )
+    unique_users = len(set(e.user for e in failed_entries if e.user))
+    unique_policies = len(set(
+        v.get("policy_id", "") for e in failed_entries for v in e.violations
+    ))
     rows = "\n".join(
         f'<tr>'
         f'<td style="white-space:nowrap;font-size:12px">{escape(e.timestamp[:19].replace("T"," "))}</td>'
@@ -251,7 +201,33 @@ async def prompt_log_page(request: Request) -> HTMLResponse:
           <h1>Prompt Log</h1>
           <p>In-memory audit log of all prompt evaluations ({total} entries). Includes API, gateway, and playground requests.</p>
         </div>
+        <form method="post" action="/ui/prompt-log/clear" style="margin:0">
+          <button class="button danger" type="submit" onclick="return confirm('Clear all {total} prompt log entries?')">Clear Log</button>
+        </form>
       </section>
+      {_notice(message, None)}
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Evaluations</div>
+          <div class="stat-value">{total}</div>
+          <div class="stat-sub muted">in memory</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Violations</div>
+          <div class="stat-value" style="color:{'var(--danger)' if total_violations > 0 else 'var(--text)'}">{total_violations}</div>
+          <div class="stat-sub {'danger' if high_critical > 0 else 'muted'}">{high_critical} high/critical</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Failed Requests</div>
+          <div class="stat-value" style="color:{'var(--warning)' if len(failed_entries) > 0 else 'var(--text)'}">{len(failed_entries)}</div>
+          <div class="stat-sub muted">blocked by policy</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Users Flagged</div>
+          <div class="stat-value">{unique_users}</div>
+          <div class="stat-sub muted">{unique_policies} policies triggered</div>
+        </div>
+      </div>
       <section class="panel" style="overflow-x:auto">
         <table>
           <thead><tr>
@@ -276,6 +252,16 @@ async def prompt_log_page(request: Request) -> HTMLResponse:
       </style>
     """
     return HTMLResponse(_page("RAMPART Prompt Log", body, read_session_user(request)))
+
+
+@router.post("/ui/prompt-log/clear", response_class=HTMLResponse)
+async def prompt_log_clear(request: Request) -> RedirectResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    clear_prompt_log()
+    audit_event(request, "prompt_log.clear", actor=read_session_user(request), result="success")
+    return RedirectResponse("/ui/prompt-log?message=Prompt+log+cleared", status_code=303)
 
 
 def _policy_results_html(policy_results: list) -> str:
@@ -1835,7 +1821,7 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
             return "active"
         if label == "Clients" and ("api key" in t or "client" in t):
             return "active"
-        if label == "Violations" and "violation" in t:
+        if label == "Violations" and "violation" in t:  # legacy
             return "active"
         if label == "Settings" and "setting" in t:
             return "active"
@@ -1859,7 +1845,6 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
         f'<a class="{_nav_class("Clients")}" href="/ui/clients">Clients</a>'
         f'<a class="{_nav_class("Groups")}" href="/ui/groups">Groups</a>'
         f'<a class="{_nav_class("Group Mappings")}" href="/ui/group-mappings">Group Mappings</a>'
-        f'<a class="{_nav_class("Violations")}" href="/ui/violations">Violations</a>'
         f'<a class="{_nav_class("Prompt Log")}" href="/ui/prompt-log">Prompt Log</a>'
         f'<a class="{_nav_class("Playground")}" href="/ui/playground">Playground</a>'
         f'<a class="{_nav_class("Extension")}" href="/ui/extension">Extension</a>'
