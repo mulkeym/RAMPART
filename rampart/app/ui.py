@@ -15,6 +15,11 @@ from rampart.app.group_store import (
     GroupRecord, create_group as store_create_group, delete_group as store_delete_group,
     get_group, list_groups as store_list_groups, regenerate_enrollment_key, update_group as store_update_group,
 )
+from rampart.app.group_mapping_store import (
+    GroupMapping, list_mappings as store_list_mappings, get_mapping as store_get_mapping,
+    create_mapping as store_create_mapping, update_mapping as store_update_mapping,
+    delete_mapping as store_delete_mapping,
+)
 from rampart.app.policy_store import delete_policy, get_policy, upsert_policy
 from rampart.app.security.audit import audit_event
 from rampart.app.security.auth import authenticate, clear_session_cookie, read_session_user, require_ui_user, set_session_cookie
@@ -609,6 +614,144 @@ async def regenerate_key_route(group_id: str, request: Request) -> RedirectRespo
     except ValueError:
         pass
     return RedirectResponse("/ui/groups?message=Enrollment+key+regenerated", status_code=303)
+
+
+@router.get("/ui/group-mappings", response_class=HTMLResponse)
+async def group_mappings_index(request: Request, message: Optional[str] = None) -> HTMLResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    mappings = store_list_mappings(get_config().user_group_resolver.mappings_path)
+    groups = store_list_groups()
+    group_by_id = {g.id: g for g in groups}
+    rows = []
+    for m in mappings:
+        status = "enabled" if m.enabled else "disabled"
+        group = group_by_id.get(m.rampart_group_id)
+        group_name = escape(group.name) if group else f"<span class=\"muted\">{escape(m.rampart_group_id)}</span>"
+        rows.append(f"""
+      <tr>
+        <td>{escape(m.external_group)}</td>
+        <td>{group_name}</td>
+        <td><span class="pill {status}">{status}</span></td>
+        <td class="row-actions">
+          <a class="button small" href="/ui/group-mappings/{escape(m.id)}">Edit</a>
+          <form class="confirm-action" method="post" action="/ui/group-mappings/{escape(m.id)}/delete" data-confirm-title="Delete Mapping?" data-confirm-message="Delete mapping for {escape(m.external_group)}?">
+            <button class="button small danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    """)
+    rows_html = "\n".join(rows)
+    body = f"""
+      <section class="toolbar">
+        <div><h1>Group Mappings</h1><p>Map external identity provider groups to RAMPART groups.</p></div>
+        <a class="button primary" href="/ui/group-mappings/new">New Mapping</a>
+      </section>
+      {_notice(message, None)}
+      <section class="panel">
+        <table>
+          <thead><tr><th>External Group</th><th>RAMPART Group</th><th>Status</th><th></th></tr></thead>
+          <tbody>{rows_html or _empty_row(4, "No group mappings created yet.")}</tbody>
+        </table>
+      </section>
+    """
+    return HTMLResponse(_page("Group Mappings", body, read_session_user(request)))
+
+
+@router.get("/ui/group-mappings/new", response_class=HTMLResponse)
+async def new_group_mapping(request: Request) -> HTMLResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    return HTMLResponse(_group_mapping_form(None, "Create Group Mapping", "/ui/group-mappings/new", actor=read_session_user(request)))
+
+
+@router.post("/ui/group-mappings/new", response_class=HTMLResponse)
+async def create_group_mapping_route(request: Request) -> HTMLResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    form = await _form_data(request)
+    external_group = form.get("external_group", "").strip()
+    rampart_group_id = form.get("rampart_group_id", "").strip()
+    if not external_group or not rampart_group_id:
+        return HTMLResponse(_group_mapping_form(None, "Create Group Mapping", "/ui/group-mappings/new", "External group and RAMPART group are required.", read_session_user(request)), status_code=400)
+    enabled = form.get("enabled") == "on"
+    try:
+        store_create_mapping(external_group=external_group, rampart_group_id=rampart_group_id, enabled=enabled, path=get_config().user_group_resolver.mappings_path)
+    except ValueError as e:
+        return HTMLResponse(_group_mapping_form(None, "Create Group Mapping", "/ui/group-mappings/new", str(e), read_session_user(request)), status_code=400)
+    return RedirectResponse("/ui/group-mappings?message=Mapping+created", status_code=303)
+
+
+@router.get("/ui/group-mappings/{mapping_id}", response_class=HTMLResponse)
+async def edit_group_mapping(mapping_id: str, request: Request) -> HTMLResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    mapping = store_get_mapping(mapping_id, get_config().user_group_resolver.mappings_path)
+    if not mapping:
+        return HTMLResponse(_page("Mapping Not Found", f"<p>Mapping <code>{escape(mapping_id)}</code> not found.</p>", read_session_user(request)), status_code=404)
+    return HTMLResponse(_group_mapping_form(mapping, "Edit Group Mapping", f"/ui/group-mappings/{escape(mapping.id)}", actor=read_session_user(request)))
+
+
+@router.post("/ui/group-mappings/{mapping_id}", response_class=HTMLResponse)
+async def update_group_mapping_route(mapping_id: str, request: Request) -> HTMLResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    mapping = store_get_mapping(mapping_id, get_config().user_group_resolver.mappings_path)
+    if not mapping:
+        return RedirectResponse("/ui/group-mappings?message=Mapping+not+found", status_code=303)
+    form = await _form_data(request)
+    mapping.external_group = form.get("external_group", mapping.external_group).strip()
+    mapping.rampart_group_id = form.get("rampart_group_id", mapping.rampart_group_id).strip()
+    mapping.enabled = form.get("enabled") == "on"
+    store_update_mapping(mapping, get_config().user_group_resolver.mappings_path)
+    return RedirectResponse(f"/ui/group-mappings?message=Mapping+saved", status_code=303)
+
+
+@router.post("/ui/group-mappings/{mapping_id}/delete", response_class=HTMLResponse)
+async def delete_group_mapping_route(mapping_id: str, request: Request) -> RedirectResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    try:
+        store_delete_mapping(mapping_id, get_config().user_group_resolver.mappings_path)
+    except ValueError:
+        pass
+    return RedirectResponse("/ui/group-mappings?message=Mapping+deleted", status_code=303)
+
+
+def _group_mapping_form(mapping: Optional[GroupMapping], title: str, action_url: str, error: Optional[str] = None, actor: Optional[str] = None) -> str:
+    external_group = mapping.external_group if mapping else ""
+    rampart_group_id = mapping.rampart_group_id if mapping else ""
+    enabled = "checked" if (mapping.enabled if mapping else True) else ""
+    groups = store_list_groups()
+    group_options = "\n".join(
+        f'<option value="{escape(g.id)}" {"selected" if g.id == rampart_group_id else ""}>{escape(g.name)} ({escape(g.id)})</option>'
+        for g in groups
+    )
+    body = f"""
+      <section class="toolbar">
+        <div><h1>{escape(title)}</h1><p>Map an external identity provider group to a RAMPART group.</p></div>
+        <a class="button" href="/ui/group-mappings">Back</a>
+      </section>
+      {_notice(None, error)}
+      <form class="panel form" method="post" action="{escape(action_url)}">
+        <label>External Group Name<input name="external_group" value="{escape(external_group)}" required></label>
+        <label>RAMPART Group
+          <select name="rampart_group_id" required>
+            <option value="">-- Select a group --</option>
+            {group_options}
+          </select>
+        </label>
+        <label class="checkbox"><input type="checkbox" name="enabled" {enabled}> Enabled</label>
+        <div class="actions"><button class="button primary" type="submit">Save Mapping</button></div>
+      </form>
+    """
+    return _page(title, body, actor)
 
 
 @router.get("/ui/policies/new", response_class=HTMLResponse)
@@ -1588,7 +1731,9 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
             return "active"
         if label == "Extension" and "extension" in t:
             return "active"
-        if label == "Groups" and "group" in t:
+        if label == "Groups" and "group" in t and "mapping" not in t:
+            return "active"
+        if label == "Group Mappings" and "mapping" in t:
             return "active"
         if label == "Sites" and ("site" in t or "discover" in t):
             return "active"
@@ -1599,6 +1744,7 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
         f'<a class="{_nav_class("Policies")}" href="/ui/policies">Policies</a>'
         f'<a class="{_nav_class("Clients")}" href="/ui/clients">Clients</a>'
         f'<a class="{_nav_class("Groups")}" href="/ui/groups">Groups</a>'
+        f'<a class="{_nav_class("Group Mappings")}" href="/ui/group-mappings">Group Mappings</a>'
         f'<a class="{_nav_class("Violations")}" href="/ui/violations">Violations</a>'
         f'<a class="{_nav_class("Playground")}" href="/ui/playground">Playground</a>'
         f'<a class="{_nav_class("Extension")}" href="/ui/extension">Extension</a>'
