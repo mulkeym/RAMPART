@@ -19,6 +19,11 @@ from rampart.app.group_store import (
     GroupRecord, create_group as store_create_group_record, delete_group as store_delete_group_record,
     get_group, list_groups as store_list_groups, update_group as store_update_group_record,
 )
+from rampart.app.group_mapping_store import (
+    list_mappings as store_list_mappings, get_mapping as store_get_mapping,
+    create_mapping as store_create_mapping, update_mapping as store_update_mapping_record,
+    delete_mapping as store_delete_mapping, GroupMapping,
+)
 
 router = APIRouter()
 
@@ -56,6 +61,7 @@ WRITE_TOOLS = {
     "create_client", "update_client", "delete_client",
     "toggle_client", "rotate_client_key", "assign_policies",
     "create_group", "update_group", "delete_group",
+    "create_group_mapping", "update_group_mapping", "delete_group_mapping",
 }
 
 
@@ -878,6 +884,90 @@ def handle_delete_group(group_id: str) -> str:
     except ValueError as e:
         return json.dumps({"error": str(e)})
     return json.dumps({"deleted": group_id})
+
+
+# --- Group Mapping Tools ---
+
+@_handler(
+    "list_group_mappings",
+    "List all external group to RAMPART group mappings.",
+    {"type": "object", "properties": {}, "required": []},
+)
+def handle_list_group_mappings() -> str:
+    config = get_config()
+    mappings = store_list_mappings(config.user_group_resolver.mappings_path)
+    return json.dumps([
+        {"id": m.id, "external_group": m.external_group, "rampart_group_id": m.rampart_group_id, "enabled": m.enabled}
+        for m in mappings
+    ])
+
+
+@_handler(
+    "create_group_mapping",
+    "Create a mapping from an external identity provider group to a RAMPART group.",
+    {
+        "type": "object",
+        "properties": {
+            "external_group": {"type": "string", "description": "External group name (e.g. from Keycloak)"},
+            "rampart_group_id": {"type": "string", "description": "RAMPART group ID to map to"},
+            "enabled": {"type": "boolean", "description": "Whether the mapping is active", "default": True},
+        },
+        "required": ["external_group", "rampart_group_id"],
+    },
+)
+def handle_create_group_mapping(external_group: str, rampart_group_id: str, enabled: bool = True) -> str:
+    config = get_config()
+    mapping = store_create_mapping(external_group, rampart_group_id, enabled=enabled, path=config.user_group_resolver.mappings_path)
+    return json.dumps({"created": mapping.id, "external_group": mapping.external_group, "rampart_group_id": mapping.rampart_group_id})
+
+
+@_handler(
+    "update_group_mapping",
+    "Update an existing group mapping. Only provided fields are changed.",
+    {
+        "type": "object",
+        "properties": {
+            "mapping_id": {"type": "string", "description": "The mapping ID to update"},
+            "external_group": {"type": "string", "description": "New external group name"},
+            "rampart_group_id": {"type": "string", "description": "New RAMPART group ID"},
+            "enabled": {"type": "boolean", "description": "Whether the mapping is active"},
+        },
+        "required": ["mapping_id"],
+    },
+)
+def handle_update_group_mapping(mapping_id: str, external_group: str = None, rampart_group_id: str = None, enabled: bool = None) -> str:
+    config = get_config()
+    mapping = store_get_mapping(mapping_id, config.user_group_resolver.mappings_path)
+    if not mapping:
+        return json.dumps({"error": f"Mapping '{mapping_id}' not found."})
+    if external_group is not None:
+        mapping.external_group = external_group
+    if rampart_group_id is not None:
+        mapping.rampart_group_id = rampart_group_id
+    if enabled is not None:
+        mapping.enabled = enabled
+    store_update_mapping_record(mapping, config.user_group_resolver.mappings_path)
+    return json.dumps({"updated": mapping_id})
+
+
+@_handler(
+    "delete_group_mapping",
+    "Delete a group mapping.",
+    {
+        "type": "object",
+        "properties": {
+            "mapping_id": {"type": "string", "description": "The mapping ID to delete"},
+        },
+        "required": ["mapping_id"],
+    },
+)
+def handle_delete_group_mapping(mapping_id: str) -> str:
+    config = get_config()
+    try:
+        store_delete_mapping(mapping_id, config.user_group_resolver.mappings_path)
+    except ValueError as e:
+        return json.dumps({"error": str(e)})
+    return json.dumps({"deleted": mapping_id})
 
 
 # --- Register individual REST endpoints for each tool (must be after all @_handler definitions) ---
