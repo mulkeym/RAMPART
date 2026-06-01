@@ -42,13 +42,16 @@ class PromptLogEntry(BaseModel):
 
 # Module-level ring buffer
 _buffer: deque[PromptLogEntry] = deque(maxlen=10000)
+_total_appended: int = 0
 
 
 def log_prompt(entry: PromptLogEntry) -> None:
     """Append a prompt log entry to the in-memory buffer."""
+    global _total_appended
     if not entry.timestamp:
         entry.timestamp = datetime.now(timezone.utc).isoformat()
     _buffer.append(entry)
+    _total_appended += 1
 
 
 def get_entries(limit: int = 200, offset: int = 0) -> list[PromptLogEntry]:
@@ -61,8 +64,26 @@ def get_entry_count() -> int:
     return len(_buffer)
 
 
+def get_entries_since(cursor: int) -> tuple[list[PromptLogEntry], int]:
+    """Return entries added since cursor position. Returns (entries, new_cursor).
+
+    Cursor is the total number of entries ever appended. If the buffer has
+    wrapped past the cursor, returns all current entries and resets cursor.
+    """
+    total_appended = _total_appended
+    if cursor >= total_appended:
+        return [], cursor
+    buf_list = list(_buffer)
+    available = total_appended - cursor
+    if available > len(buf_list):
+        return buf_list, total_appended
+    return buf_list[-available:], total_appended
+
+
 def clear() -> None:
+    global _total_appended
     _buffer.clear()
+    _total_appended = 0
 
 
 def set_max_size(size: int) -> None:
