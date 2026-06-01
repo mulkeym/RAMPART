@@ -20,6 +20,7 @@ _eval_cache: dict[str, tuple[EvaluationResponse, float]] = {}
 CACHE_TTL = 300  # 5 minutes
 CACHE_MAX_SIZE = 1000
 from rampart.app.policy.engine import PolicyEngine
+from rampart.app.prompt_log import PromptLogEntry, log_prompt
 from rampart.app.tracking import ClientContext, write_evaluation_event
 
 logger = logging.getLogger(__name__)
@@ -86,8 +87,11 @@ async def evaluate(payload: EvaluationRequest, request: Request) -> EvaluationRe
     user = extract_user(payload.request)
     policies = await _resolve_policies(config, client_record, user=user)
     engine = PolicyEngine(config, policies)
+    start = time()
     response = await engine.evaluate(payload.request)
+    eval_ms = int((time() - start) * 1000)
     _track_evaluation(config, request, response, client_record, policies, user=user)
+    _log_prompt(request, payload.request, response, policies, client_record, user, eval_ms, source="api")
     if client_record:
         record_evaluation(client_record.id, len(response.violations), config.clients.path)
     return response
@@ -107,10 +111,15 @@ async def evaluate_chat_completions(payload: dict[str, Any], request: Request):
 
     if response is None:
         engine = PolicyEngine(config, policies)
+        start = time()
         response = await engine.evaluate(payload)
+        eval_ms = int((time() - start) * 1000)
         _set_cached_eval(cache_key, response)
+    else:
+        eval_ms = 0  # cached
 
     _track_evaluation(config, request, response, client_record, policies, user=user)
+    _log_prompt(request, payload, response, policies, client_record, user, eval_ms, source="gateway")
     if client_record:
         record_evaluation(client_record.id, len(response.violations), config.clients.path)
     blocking_violations = _blocking_violations(response, policies)
@@ -293,6 +302,32 @@ def _track_evaluation(config, request: Request, response: EvaluationResponse, cl
     client = client_context_from_record(client_record, fallback)
     applied_policies = [policy.id for policy in policies if policy.enabled]
     write_evaluation_event(config.tracking, client, response, applied_policies)
+
+
+def _log_prompt(
+    request: Request,
+    openai_request: dict[str, Any],
+    response: EvaluationResponse,
+    policies: list[PolicyConfig],
+    client_record: Optional[ClientRecord],
+    user: Optional[str],
+    eval_ms: int,
+    source: str,
+) -> None:
+    log_prompt(PromptLogEntry(
+        source=source,
+        user=user,
+        client_id=client_record.id if client_record else None,
+        owner=(client_record.owner_email or client_record.owner_name) if client_record else None,
+        source_ip=request.client.host if request.client else None,
+        model=openai_request.get("model"),
+        messages=openai_request.get("messages", []),
+        decision=response.decision,
+        violations=[v.model_dump() for v in response.violations],
+        applied_policies=[p.id for p in policies if p.enabled],
+        eval_ms=eval_ms,
+        warnings=response.warnings or [],
+    ))
 
 
 def _extract_response_text(body: dict[str, Any]) -> Optional[str]:

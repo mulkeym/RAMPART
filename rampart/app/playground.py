@@ -11,6 +11,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from rampart.app.config import CheckConfig, PolicyConfig, UpstreamConfig, get_config
+from rampart.app.prompt_log import PromptLogEntry, log_prompt
 from rampart.app.security.audit import audit_event
 from rampart.app.security.auth import read_session_user, require_ui_user
 from rampart.app.ui import _page, _severity_pill
@@ -37,7 +38,7 @@ def _playground_page(config, actor: Optional[str], results_html: str = "") -> st
       <section class="toolbar">
         <div>
           <h1>Playground</h1>
-          <p>Simulate policy evaluation against prompts. Results are not logged.</p>
+          <p>Simulate policy evaluation against prompts.</p>
         </div>
       </section>
       <form id="pg-form" class="pg-layout">
@@ -278,6 +279,18 @@ async def playground_evaluate(request: Request) -> HTMLResponse:
     eval_ms = int((time.time() - start_time) * 1000)
 
     policy_results = _build_policy_results(selected_policies, response)
+
+    log_prompt(PromptLogEntry(
+        source="playground",
+        user=actor,
+        model=openai_request.get("model"),
+        messages=openai_request.get("messages", []),
+        decision="fail" if any(r["status"] == "match" for r in policy_results) else "accept",
+        violations=[v.model_dump() for v in response.violations],
+        applied_policies=[p.id for p in selected_policies],
+        eval_ms=eval_ms,
+        warnings=response.warnings or [],
+    ))
 
     llm_response_html = ""
     if action in ("send", "force_send"):

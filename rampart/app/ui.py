@@ -21,6 +21,7 @@ from rampart.app.group_mapping_store import (
     delete_mapping as store_delete_mapping,
 )
 from rampart.app.policy_store import delete_policy, get_policy, upsert_policy
+from rampart.app.prompt_log import get_entries as get_prompt_log_entries, get_entry_count as get_prompt_log_count
 from rampart.app.security.audit import audit_event
 from rampart.app.security.auth import authenticate, clear_session_cookie, read_session_user, require_ui_user, set_session_cookie
 from rampart.app.security.credentials import change_password
@@ -219,6 +220,73 @@ async def violations_index(request: Request, customer: Optional[str] = None, cli
       </section>
     """
     return HTMLResponse(_page("RAMPART Violations", body, read_session_user(request)))
+
+
+@router.get("/ui/prompt-log", response_class=HTMLResponse)
+async def prompt_log_page(request: Request) -> HTMLResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    entries = get_prompt_log_entries(limit=500)
+    total = get_prompt_log_count()
+    rows = "\n".join(
+        f'<tr>'
+        f'<td style="white-space:nowrap;font-size:12px">{escape(e.timestamp[:19].replace("T"," "))}</td>'
+        f'<td><span class="badge {escape(e.source)}">{escape(e.source)}</span></td>'
+        f'<td>{escape(e.user or "-")}</td>'
+        f'<td>{escape(e.client_id or "-")}</td>'
+        f'<td>{escape(e.model or "-")}</td>'
+        f'<td>{escape(_truncate_prompt(e.messages))}</td>'
+        f'<td><span class="decision-pill {"fail" if e.decision == "fail" else "accept"}">{escape(e.decision)}</span></td>'
+        f'<td>{len(e.violations)}</td>'
+        f'<td>{e.eval_ms or 0}ms</td>'
+        f'</tr>'
+        for e in entries
+    )
+    body = f"""
+      <section class="toolbar">
+        <div>
+          <h1>Prompt Log</h1>
+          <p>In-memory audit log of all prompt evaluations ({total} entries). Includes API, gateway, and playground requests.</p>
+        </div>
+      </section>
+      <section class="panel" style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th>Time</th><th>Source</th><th>User</th><th>Client</th><th>Model</th><th>Prompt</th><th>Decision</th><th>Violations</th><th>Eval</th>
+          </tr></thead>
+          <tbody>{rows or _empty_row(9, "No prompts logged yet.")}</tbody>
+        </table>
+      </section>
+      <style>
+        .badge {{ display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase; }}
+        .badge.api {{ background:rgba(56,139,253,0.15);color:#58a6ff; }}
+        .badge.gateway {{ background:rgba(210,153,34,0.15);color:#d29922; }}
+        .badge.playground {{ background:rgba(188,140,255,0.15);color:#bc8cff; }}
+        .decision-pill {{ display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase; }}
+        .decision-pill.fail {{ background:rgba(248,81,73,0.15);color:#f85149; }}
+        .decision-pill.accept {{ background:rgba(63,185,80,0.15);color:#3fb950; }}
+      </style>
+    """
+    return HTMLResponse(_page("RAMPART Prompt Log", body, read_session_user(request)))
+
+
+def _truncate_prompt(messages: list) -> str:
+    """Extract first user message content, truncated to 80 chars."""
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            return content[:80] + ("..." if len(content) > 80 else "")
+        if isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and isinstance(part.get("text"), str):
+                    text = part["text"]
+                    return text[:80] + ("..." if len(text) > 80 else "")
+    return "-"
 
 
 @router.post("/ui/settings/test-llm", response_class=HTMLResponse)
@@ -1735,6 +1803,8 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
             return "active"
         if label == "Group Mappings" and "mapping" in t:
             return "active"
+        if label == "Prompt Log" and "prompt log" in t:
+            return "active"
         if label == "Sites" and ("site" in t or "discover" in t):
             return "active"
         return ""
@@ -1746,6 +1816,7 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
         f'<a class="{_nav_class("Groups")}" href="/ui/groups">Groups</a>'
         f'<a class="{_nav_class("Group Mappings")}" href="/ui/group-mappings">Group Mappings</a>'
         f'<a class="{_nav_class("Violations")}" href="/ui/violations">Violations</a>'
+        f'<a class="{_nav_class("Prompt Log")}" href="/ui/prompt-log">Prompt Log</a>'
         f'<a class="{_nav_class("Playground")}" href="/ui/playground">Playground</a>'
         f'<a class="{_nav_class("Extension")}" href="/ui/extension">Extension</a>'
         f'<a class="{_nav_class("Sites")}" href="/ui/sites">Sites</a>'
