@@ -264,11 +264,10 @@ async def playground_evaluate(request: Request) -> HTMLResponse:
     form = await _parse_form(request)
     action = form.get("action", "evaluate")
 
-    messages = _build_messages(form)
-    openai_request: dict[str, Any] = {"messages": messages}
-    model_override = form.get("model_override", "").strip()
-    if model_override:
-        openai_request["model"] = model_override
+    try:
+        openai_request = _build_openai_request(form)
+    except ValueError as e:
+        return HTMLResponse(f'<div class="notice error">{escape(str(e))}</div>')
 
     selected_policies = _resolve_selected_policies(config, form)
 
@@ -282,7 +281,7 @@ async def playground_evaluate(request: Request) -> HTMLResponse:
 
     log_prompt(PromptLogEntry(
         source="playground",
-        user=actor,
+        user=openai_request.get("user") or actor,
         model=openai_request.get("model"),
         messages=openai_request.get("messages", []),
         decision="fail" if any(r["status"] == "match" for r in policy_results) else "accept",
@@ -319,11 +318,10 @@ async def playground_llm(request: Request) -> HTMLResponse:
     config = get_config()
     form = await _parse_form(request)
 
-    messages = _build_messages(form)
-    openai_request: dict[str, Any] = {"messages": messages}
-    model_override = form.get("model_override", "").strip()
-    if model_override:
-        openai_request["model"] = model_override
+    try:
+        openai_request = _build_openai_request(form)
+    except ValueError as e:
+        return HTMLResponse(f'<div class="notice error">{escape(str(e))}</div>')
 
     # Re-run evaluation to get sanitized request (lightweight, no LLM calls needed for this)
     selected_policies = _resolve_selected_policies(config, form)
