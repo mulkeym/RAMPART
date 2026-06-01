@@ -108,6 +108,14 @@ class UserGroupResolverConfig(BaseModel):
     keycloak: KeycloakConfig = Field(default_factory=KeycloakConfig)
 
 
+class SyslogConfig(BaseModel):
+    enabled: bool = False
+    protocol: str = "udp"
+    host: str = "127.0.0.1"
+    port: int = 514
+    send_interval_seconds: int = 5
+
+
 class AppConfig(BaseModel):
     version: int = 1
     llm_evaluator: LlmEvaluatorConfig = Field(default_factory=LlmEvaluatorConfig)
@@ -120,6 +128,7 @@ class AppConfig(BaseModel):
     upstream: UpstreamConfig = Field(default_factory=UpstreamConfig)
     policies: list[PolicyConfig] = Field(default_factory=list)
     user_group_resolver: UserGroupResolverConfig = Field(default_factory=UserGroupResolverConfig)
+    syslog: SyslogConfig = Field(default_factory=SyslogConfig)
 
 
 def default_policy_path() -> Path:
@@ -184,6 +193,12 @@ def _apply_env_overrides(config: AppConfig) -> None:
     resolver.keycloak.realm = os.getenv("RAMPART_KEYCLOAK_REALM", resolver.keycloak.realm)
     resolver.keycloak.client_id = os.getenv("RAMPART_KEYCLOAK_CLIENT_ID", resolver.keycloak.client_id)
     resolver.keycloak.client_secret = os.getenv("RAMPART_KEYCLOAK_CLIENT_SECRET", resolver.keycloak.client_secret)
+    syslog = config.syslog
+    syslog.enabled = _env_bool("RAMPART_SYSLOG_ENABLED", syslog.enabled)
+    syslog.protocol = os.getenv("RAMPART_SYSLOG_PROTOCOL", syslog.protocol)
+    syslog.host = os.getenv("RAMPART_SYSLOG_HOST", syslog.host)
+    if os.getenv("RAMPART_SYSLOG_PORT"):
+        syslog.port = int(os.getenv("RAMPART_SYSLOG_PORT"))
 
 
 def _env_bool(name: str, default: bool) -> bool:
