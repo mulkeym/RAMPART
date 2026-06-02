@@ -433,26 +433,31 @@ async def playground_evaluate(request: Request) -> HTMLResponse:
                     admin_base = f"{kc.base_url.rstrip('/')}/admin/realms/{kc.realm}"
                     headers = {"Authorization": f"Bearer {token}"}
 
-                    # Step 2: Search by email
+                    # Step 2-4: Search by email, username, general
                     email_url = f"{admin_base}/users?email={escape(user)}&exact=true"
                     resp = await hc.get(f"{admin_base}/users", params={"email": user, "exact": "true"}, headers=headers)
                     email_results = resp.json() if resp.status_code == 200 else []
-                    resolution_trace.append({"step": "Search: Email", "status": "ok" if email_results else "warn",
-                        "detail": f"GET <code>{escape(email_url)}</code> → HTTP {resp.status_code}, {len(email_results)} result(s)"})
 
-                    # Step 3: Search by username
                     user_url = f"{admin_base}/users?username={escape(user)}&exact=true"
                     resp = await hc.get(f"{admin_base}/users", params={"username": user, "exact": "true"}, headers=headers)
                     username_results = resp.json() if resp.status_code == 200 else []
-                    resolution_trace.append({"step": "Search: Username", "status": "ok" if username_results else "warn",
-                        "detail": f"GET <code>{escape(user_url)}</code> → HTTP {resp.status_code}, {len(username_results)} result(s)"})
 
-                    # Step 4: General search
                     search_url = f"{admin_base}/users?search={escape(user)}"
                     resp = await hc.get(f"{admin_base}/users", params={"search": user}, headers=headers)
                     search_results = resp.json() if resp.status_code == 200 else []
-                    resolution_trace.append({"step": "Search: General", "status": "ok" if search_results else "warn",
-                        "detail": f"GET <code>{escape(search_url)}</code> → HTTP {resp.status_code}, {len(search_results)} result(s)"})
+
+                    e_icon = "&#x2705;" if email_results else "&#x274C;"
+                    u_icon = "&#x2705;" if username_results else "&#x274C;"
+                    g_icon = "&#x2705;" if search_results else "&#x274C;"
+                    search_summary = f"Email: {len(email_results)}, Username: {len(username_results)}, General: {len(search_results)}"
+                    search_found = bool(email_results or username_results or search_results)
+                    search_details = (
+                        f"{e_icon} <strong>Email:</strong> <code>{escape(email_url)}</code> → {len(email_results)} result(s)<br>"
+                        f"{u_icon} <strong>Username:</strong> <code>{escape(user_url)}</code> → {len(username_results)} result(s)<br>"
+                        f"{g_icon} <strong>General:</strong> <code>{escape(search_url)}</code> → {len(search_results)} result(s)"
+                    )
+                    resolution_trace.append({"step": "User Search", "status": "ok" if search_found else "fail",
+                        "detail": search_summary, "collapsible": search_details})
 
                     # Pick the first match
                     kc_user = None
@@ -919,13 +924,26 @@ def _render_results(response, policy_results: list[dict], eval_ms: int, llm_resp
             icon = status_icons.get(t["status"], "")
             step = escape(t["step"])
             detail = t["detail"]  # already contains safe HTML from builder
-            trace_rows.append(
-                f'<div class="pg-trace-row">'
-                f'<span class="pg-trace-icon">{icon}</span>'
-                f'<span class="pg-trace-step">{step}</span>'
-                f'<span class="pg-trace-detail">{detail}</span>'
-                f'</div>'
-            )
+            collapsible = t.get("collapsible", "")
+            if collapsible:
+                trace_rows.append(
+                    f'<details class="pg-trace-row" style="cursor:pointer">'
+                    f'<summary style="display:flex;gap:6px;align-items:flex-start">'
+                    f'<span class="pg-trace-icon">{icon}</span>'
+                    f'<span class="pg-trace-step">{step}</span>'
+                    f'<span class="pg-trace-detail">{detail} <span style="color:var(--primary);font-size:10px">&#9662; details</span></span>'
+                    f'</summary>'
+                    f'<div style="margin:6px 0 6px 24px;padding:8px;background:var(--bg);border-radius:4px;font-size:11px;line-height:1.8">{collapsible}</div>'
+                    f'</details>'
+                )
+            else:
+                trace_rows.append(
+                    f'<div class="pg-trace-row">'
+                    f'<span class="pg-trace-icon">{icon}</span>'
+                    f'<span class="pg-trace-step">{step}</span>'
+                    f'<span class="pg-trace-detail">{detail}</span>'
+                    f'</div>'
+                )
         trace_html = "".join(trace_rows) if trace_rows else '<div class="muted">No resolution steps</div>'
 
         summary_parts = []
