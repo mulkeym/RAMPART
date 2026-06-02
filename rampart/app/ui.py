@@ -516,13 +516,22 @@ async def purge_group_cache(request: Request) -> HTMLResponse:
         return redirect
     actor = read_session_user(request)
     try:
-        from rampart.app.main import _resolver_instance
-        if _resolver_instance:
-            count = _resolver_instance.purge()
-            audit_event(request, "settings.purge_group_cache", actor=actor, result="success", detail=f"{count} entries purged")
-            return RedirectResponse(f"/ui/settings?message=Group+cache+purged+({count}+entries)", status_code=303)
-        else:
-            return RedirectResponse("/ui/settings?message=No+resolver+active+(cache+empty)", status_code=303)
+        import rampart.app.main as _main
+        count = 0
+        # Purge in-memory cache
+        if _main._resolver_instance:
+            count = _main._resolver_instance.purge()
+        # Also delete the cache file so it doesn't reload on restart
+        config = get_config()
+        from pathlib import Path
+        cache_path = Path(config.user_group_resolver.cache_path)
+        if cache_path.exists():
+            cache_path.unlink()
+        # Reset the resolver instance so it's recreated fresh
+        _main._resolver_instance = None
+        _main._resolver_config_snapshot = None
+        audit_event(request, "settings.purge_group_cache", actor=actor, result="success", detail=f"{count} entries purged")
+        return RedirectResponse(f"/ui/settings?message=Group+cache+purged+({count}+entries)", status_code=303)
     except Exception as exc:
         return RedirectResponse(f"/ui/settings?message=Purge+failed:+{quote(str(exc)[:100])}", status_code=303)
 
