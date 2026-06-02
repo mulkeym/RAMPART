@@ -1011,6 +1011,32 @@ async def delete_group_mapping_route(mapping_id: str, request: Request) -> Redir
     return RedirectResponse("/ui/group-mappings?message=Mapping+deleted", status_code=303)
 
 
+@router.get("/ui/group-mappings/fetch-keycloak-groups")
+async def fetch_keycloak_groups(request: Request):
+    from fastapi.responses import JSONResponse
+    redirect = require_ui_user(request)
+    if redirect:
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    config = get_config()
+    resolver_cfg = config.user_group_resolver
+    if not resolver_cfg.enabled or resolver_cfg.provider != "keycloak":
+        return JSONResponse({"error": "User Group Resolver is not enabled or not using Keycloak. Configure it in Settings."})
+    kc = resolver_cfg.keycloak
+    if not kc.base_url or not kc.realm or not kc.client_id or not kc.client_secret:
+        return JSONResponse({"error": "Keycloak connection not fully configured in Settings > User Group Resolver. Need base URL, realm, client ID, and client secret (confidential client with service account)."})
+    try:
+        from rampart.app.group_providers.keycloak import KeycloakGroupProvider
+        provider = KeycloakGroupProvider(
+            base_url=kc.base_url, realm=kc.realm,
+            client_id=kc.client_id, client_secret=kc.client_secret,
+            verify_ssl=kc.verify_ssl,
+        )
+        groups = await provider.list_realm_groups()
+        return JSONResponse({"groups": groups})
+    except Exception as exc:
+        return JSONResponse({"error": f"Failed to fetch groups from Keycloak: {str(exc)[:200]}"})
+
+
 def _group_mapping_form(mapping: Optional[GroupMapping], title: str, action_url: str, error: Optional[str] = None, actor: Optional[str] = None) -> str:
     external_group = mapping.external_group if mapping else ""
     rampart_group_id = mapping.rampart_group_id if mapping else ""
@@ -1027,7 +1053,14 @@ def _group_mapping_form(mapping: Optional[GroupMapping], title: str, action_url:
       </section>
       {_notice(None, error)}
       <form class="panel form" method="post" action="{escape(action_url)}">
-        <label>External Group Name<input name="external_group" value="{escape(external_group)}" required></label>
+        <label>External Group Name
+          <div style="display:flex;gap:8px">
+            <input name="external_group" id="ext-group-input" value="{escape(external_group)}" required list="kc-groups-list" style="flex:1">
+            <button type="button" class="button small" onclick="fetchKeycloakGroups()">Fetch from Keycloak</button>
+          </div>
+          <datalist id="kc-groups-list"></datalist>
+          <div id="kc-groups-status" class="hint" style="margin-top:4px"></div>
+        </label>
         <label>RAMPART Group
           <select name="rampart_group_id" required>
             <option value="">-- Select a group --</option>
@@ -1037,6 +1070,35 @@ def _group_mapping_form(mapping: Optional[GroupMapping], title: str, action_url:
         <label class="checkbox"><input type="checkbox" name="enabled" {enabled}> Enabled</label>
         <div class="actions"><button class="button primary" type="submit">Save Mapping</button></div>
       </form>
+      <script>
+      function fetchKeycloakGroups() {{
+        var status = document.getElementById('kc-groups-status');
+        status.textContent = 'Fetching groups from Keycloak...';
+        fetch('/ui/group-mappings/fetch-keycloak-groups')
+          .then(function(r) {{ return r.json(); }})
+          .then(function(data) {{
+            if (data.error) {{
+              status.textContent = 'Error: ' + data.error;
+              status.style.color = 'var(--danger)';
+              return;
+            }}
+            var list = document.getElementById('kc-groups-list');
+            list.innerHTML = '';
+            data.groups.forEach(function(g) {{
+              var opt = document.createElement('option');
+              opt.value = g;
+              list.appendChild(opt);
+            }});
+            status.textContent = data.groups.length + ' groups found. Type or select from the dropdown.';
+            status.style.color = 'var(--success)';
+            document.getElementById('ext-group-input').focus();
+          }})
+          .catch(function(e) {{
+            status.textContent = 'Failed: ' + e.message;
+            status.style.color = 'var(--danger)';
+          }});
+      }}
+      </script>
     """
     return _page(title, body, actor)
 

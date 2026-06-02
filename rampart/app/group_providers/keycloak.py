@@ -29,6 +29,24 @@ class KeycloakGroupProvider(GroupProvider):
             resp.raise_for_status()
             return [g["name"] for g in resp.json() if isinstance(g, dict) and "name" in g]
 
+    async def list_realm_groups(self) -> list[str]:
+        """Fetch all groups defined in the Keycloak realm."""
+        token = await self._get_service_token()
+        admin_base = f"{self.base_url}/admin/realms/{self.realm}"
+        headers = {"Authorization": f"Bearer {token}"}
+        async with httpx.AsyncClient(timeout=self.timeout, verify=self.verify_ssl) as client:
+            resp = await client.get(f"{admin_base}/groups", params={"max": 1000}, headers=headers)
+            resp.raise_for_status()
+            groups = []
+            for g in resp.json():
+                if isinstance(g, dict) and "name" in g:
+                    groups.append(g["name"])
+                    # Include subgroups
+                    for sub in g.get("subGroups", []):
+                        if isinstance(sub, dict) and "name" in sub:
+                            groups.append(sub["name"])
+            return sorted(groups)
+
     async def _get_service_token(self) -> str:
         token_url = f"{self.base_url}/realms/{self.realm}/protocol/openid-connect/token"
         async with httpx.AsyncClient(timeout=self.timeout, verify=self.verify_ssl) as client:
