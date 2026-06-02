@@ -509,6 +509,24 @@ async def update_settings(request: Request) -> HTMLResponse:
     return RedirectResponse("/ui/settings?message=Settings+saved", status_code=303)
 
 
+@router.post("/ui/settings/purge-group-cache", response_class=HTMLResponse)
+async def purge_group_cache(request: Request) -> HTMLResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    actor = read_session_user(request)
+    try:
+        from rampart.app.main import _resolver_instance
+        if _resolver_instance:
+            count = _resolver_instance.purge()
+            audit_event(request, "settings.purge_group_cache", actor=actor, result="success", detail=f"{count} entries purged")
+            return RedirectResponse(f"/ui/settings?message=Group+cache+purged+({count}+entries)", status_code=303)
+        else:
+            return RedirectResponse("/ui/settings?message=No+resolver+active+(cache+empty)", status_code=303)
+    except Exception as exc:
+        return RedirectResponse(f"/ui/settings?message=Purge+failed:+{quote(str(exc)[:100])}", status_code=303)
+
+
 @router.post("/ui/settings/local-auth", response_class=HTMLResponse)
 async def save_local_auth_settings(request: Request) -> HTMLResponse:
     redirect = require_ui_user(request)
@@ -1650,6 +1668,12 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
           <div>
             <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;color:var(--text-secondary)">Verify SSL <input type="checkbox" name="user_group_resolver_keycloak_verify_ssl" {"checked" if config.user_group_resolver.keycloak.verify_ssl else ""} style="width:auto"></label>
             <div class="hint" style="margin-top:4px">Uncheck for self-signed certificates.</div>
+          </div>
+          <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center">
+            <form method="post" action="/ui/settings/purge-group-cache" style="margin:0">
+              <button class="button small danger" type="submit" onclick="return confirm('Purge all cached user-group memberships?')">Purge Group Cache</button>
+            </form>
+            <span class="hint" style="margin:0">Clear all cached user-to-group mappings. Next lookup will query Keycloak fresh.</span>
           </div>
         </fieldset>
         <fieldset class="fieldset">

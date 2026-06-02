@@ -33,6 +33,21 @@ class UserGroupResolver:
             "expired": remaining <= 0,
         }
 
+    def purge(self) -> int:
+        """Clear the entire cache. Returns number of entries removed."""
+        count = len(self._cache)
+        self._cache.clear()
+        self._dirty = True
+        return count
+
+    def purge_user(self, user_id: str) -> bool:
+        """Remove a single user from cache. Returns True if found."""
+        if user_id in self._cache:
+            del self._cache[user_id]
+            self._dirty = True
+            return True
+        return False
+
     async def resolve(self, user_id: str) -> list[str]:
         entry = self._cache.get(user_id)
         if entry is not None and (time() - entry["fetched_at"]) < self.cache_ttl_seconds:
