@@ -76,6 +76,7 @@ async def keycloak_login(request: Request, next: str = "/ui/policies") -> Redire
         "client_id": kc.client_id,
         "redirect_uri": callback_url,
         "response_type": "code",
+        "response_mode": "query",
         "scope": "openid email profile",
         "state": next,
         "prompt": "login",
@@ -88,6 +89,8 @@ async def keycloak_login(request: Request, next: str = "/ui/policies") -> Redire
 async def keycloak_callback(request: Request, code: str = "", state: str = "/ui/policies", error: Optional[str] = None, error_description: Optional[str] = None) -> HTMLResponse:
     import logging
     logger = logging.getLogger(__name__)
+    logger.warning("KEYCLOAK CALLBACK RAW URL: %s", str(request.url))
+    logger.warning("KEYCLOAK CALLBACK PARAMS: code=%s error=%s state=%s", repr(code), repr(error), repr(state))
 
     if error:
         detail = error_description or error
