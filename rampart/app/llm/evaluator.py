@@ -248,14 +248,15 @@ def _parse_guardian_response(body: dict, threshold: float) -> tuple[bool, float,
 
 
 def _strip_image_data(request: dict[str, Any]) -> dict[str, Any]:
-    """Remove base64 image data from the request before sending to the evaluator LLM.
+    """Remove base64 image data and the user field from the request before sending to the evaluator LLM.
 
     The evaluator checks text-based policies and does not need raw image bytes.
-    Replacing them with a placeholder avoids exceeding token limits.
+    The user field (email/username) is stripped to prevent false PII violations.
     """
     from copy import deepcopy
 
     stripped = deepcopy(request)
+    stripped.pop("user", None)
     for message in stripped.get("messages") or []:
         content = message.get("content")
         if not isinstance(content, list):
