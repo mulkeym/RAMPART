@@ -35,6 +35,35 @@ class LlmEvaluator:
             return await self._evaluate_guardian(request, policies_with_llm_checks)
         return await self._evaluate_standard(request, policies_with_llm_checks)
 
+    async def sanitize(self, request: dict[str, Any], violations: list[Violation]) -> Optional[dict[str, Any]]:
+        """Ask the LLM to rewrite the request to remove violating content."""
+        llm_config = self.config.llm_evaluator
+        if not llm_config.enabled:
+            return None
+        from rampart.app.llm.prompts import build_sanitize_prompt
+        request_json = json.dumps(_strip_image_data(request), sort_keys=True, ensure_ascii=True)
+        violation_dicts = [{"policy_id": v.policy_id, "message": v.message} for v in violations]
+        prompt = build_sanitize_prompt(request_json, violation_dicts)
+        payload = {
+            "model": llm_config.model,
+            "messages": [
+                {"role": "system", "content": "Return only valid JSON."},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=llm_config.timeout_seconds, verify=tls_verify()) as client:
+                response = await client.post(
+                    f"{llm_config.base_url.rstrip('/')}/chat/completions",
+                    json=payload,
+                )
+                response.raise_for_status()
+            content = response.json()["choices"][0]["message"]["content"]
+            return json.loads(_strip_json_fence(content))
+        except Exception:
+            return None
+
     async def evaluate_response(self, response_text: str) -> list[Violation]:
         """Evaluate an LLM response against post-stage policies."""
         if not self.config.llm_evaluator.post_llm_enabled:

@@ -46,7 +46,14 @@ class PolicyEngine:
         decision = "fail" if any(_is_blocking(v, self.policies) for v in violations) else "accept"
         sanitized = None
         if violations and self._should_sanitize():
+            # Deterministic sanitization (regex redaction, tool stripping)
             sanitized = sanitize_request(request, denied_tools=denied_tools)
+            # LLM sanitization for violations caught by LLM/vision (not deterministic)
+            llm_sourced = [v for v in violations if v.source in ("llm", "vision")]
+            if llm_sourced:
+                llm_sanitized = await self.llm_evaluator.sanitize(sanitized or request, llm_sourced)
+                if llm_sanitized:
+                    sanitized = llm_sanitized
         return EvaluationResponse(
             decision=decision,
             violations=violations,

@@ -41,6 +41,32 @@ Request:
 """
 
 
+def build_sanitize_prompt(request_json: str, violations: list[dict]) -> str:
+    violation_list = "\n".join(
+        f"- [{v.get('policy_id', 'unknown')}] {v.get('message', 'Policy violation')}"
+        for v in violations
+    )
+    return f"""You are RAMPART, a prompt sanitization engine.
+
+The following OpenAI-compatible API request was blocked because it violates one or more policies.
+Your job is to rewrite ONLY the user message content to remove the violating material while
+preserving the original intent as much as possible. Do not change system messages, roles, model,
+or any other fields.
+
+Policy violations found:
+{violation_list}
+
+Original request:
+{request_json}
+
+Return ONLY the complete rewritten JSON request (valid JSON, same structure). Replace or remove
+the content that caused each violation. Keep everything else unchanged. If the entire user message
+is a violation, replace it with "[Content removed by RAMPART policy]".
+
+Return only the JSON — no explanation, no markdown fences.
+"""
+
+
 def build_vision_check_prompt(policy: PolicyConfig, check: CheckConfig) -> str:
     instruction = check.instruction or policy.description
     return f"""You are RAMPART, a strict API request firewall evaluator.
