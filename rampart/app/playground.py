@@ -1023,7 +1023,7 @@ def _render_results(response, policy_results: list[dict], eval_ms: int, llm_resp
           <div class="muted" style="font-size:11px;margin-top:12px">Policy evaluation: {eval_ms}ms{f" | Sanitization: {sanitize_ms}ms" if sanitize_ms else ""} &mdash; {_source_breakdown(policy_results)}</div>
         </div>
         <div>
-          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:8px">Sanitized Request</div>
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:8px">Sanitized Request{f' <span style="font-weight:400">({sanitize_ms}ms)</span>' if sanitize_ms else ''}</div>
           {sanitized_html}
         </div>
       </div>
