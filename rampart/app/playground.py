@@ -411,20 +411,90 @@ async def playground_evaluate(request: Request) -> HTMLResponse:
         if user and config.user_group_resolver.enabled:
             resolution_trace.append({"step": "User Group Resolver", "status": "info", "detail": f"Resolver enabled, looking up <code>{escape(user)}</code>"})
             try:
-                from rampart.app.main import resolve_policies_for_user, _get_or_create_resolver
+                import httpx
                 resolver_cfg = config.user_group_resolver
-                resolver = _get_or_create_resolver(resolver_cfg)
-                external_groups = await resolver.resolve(user)
-                if external_groups:
-                    resolution_trace.append({"step": "Keycloak Query", "status": "ok",
-                        "detail": f"User found (searched by email, then username, then general). Returned {len(external_groups)} group(s): " + ", ".join(f"<code>{escape(g)}</code>" for g in external_groups)})
-                    resolved_groups = external_groups
+                kc = resolver_cfg.keycloak
 
-                    # Map to RAMPART groups
+                # Step 1: Get service token
+                token_url = f"{kc.base_url.rstrip('/')}/realms/{kc.realm}/protocol/openid-connect/token"
+                resolution_trace.append({"step": "Token Request", "status": "info",
+                    "detail": f"POST <code>{escape(token_url)}</code> client_id=<code>{escape(kc.client_id)}</code>"})
+                async with httpx.AsyncClient(timeout=10.0, verify=kc.verify_ssl) as hc:
+                    tok_resp = await hc.post(token_url, data={
+                        "grant_type": "client_credentials", "client_id": kc.client_id, "client_secret": kc.client_secret,
+                    })
+                    if tok_resp.status_code != 200:
+                        resolution_trace.append({"step": "Token Request", "status": "fail",
+                            "detail": f"HTTP {tok_resp.status_code}: {escape(tok_resp.text[:200])}"})
+                        raise Exception(f"Token request failed: {tok_resp.status_code}")
+                    token = tok_resp.json()["access_token"]
+                    resolution_trace.append({"step": "Token Request", "status": "ok", "detail": "Service account token obtained"})
+
+                    admin_base = f"{kc.base_url.rstrip('/')}/admin/realms/{kc.realm}"
+                    headers = {"Authorization": f"Bearer {token}"}
+
+                    # Step 2: Search by email
+                    email_url = f"{admin_base}/users?email={escape(user)}&exact=true"
+                    resp = await hc.get(f"{admin_base}/users", params={"email": user, "exact": "true"}, headers=headers)
+                    email_results = resp.json() if resp.status_code == 200 else []
+                    resolution_trace.append({"step": "Search: Email", "status": "ok" if email_results else "warn",
+                        "detail": f"GET <code>{escape(email_url)}</code> → HTTP {resp.status_code}, {len(email_results)} result(s)"})
+
+                    # Step 3: Search by username
+                    user_url = f"{admin_base}/users?username={escape(user)}&exact=true"
+                    resp = await hc.get(f"{admin_base}/users", params={"username": user, "exact": "true"}, headers=headers)
+                    username_results = resp.json() if resp.status_code == 200 else []
+                    resolution_trace.append({"step": "Search: Username", "status": "ok" if username_results else "warn",
+                        "detail": f"GET <code>{escape(user_url)}</code> → HTTP {resp.status_code}, {len(username_results)} result(s)"})
+
+                    # Step 4: General search
+                    search_url = f"{admin_base}/users?search={escape(user)}"
+                    resp = await hc.get(f"{admin_base}/users", params={"search": user}, headers=headers)
+                    search_results = resp.json() if resp.status_code == 200 else []
+                    resolution_trace.append({"step": "Search: General", "status": "ok" if search_results else "warn",
+                        "detail": f"GET <code>{escape(search_url)}</code> → HTTP {resp.status_code}, {len(search_results)} result(s)"})
+
+                    # Pick the first match
+                    kc_user = None
+                    match_method = ""
+                    if email_results:
+                        kc_user = email_results[0]
+                        match_method = "email"
+                    elif username_results:
+                        kc_user = username_results[0]
+                        match_method = "username"
+                    elif search_results:
+                        kc_user = search_results[0]
+                        match_method = "general search"
+
+                    if kc_user:
+                        kc_username = kc_user.get("username", "?")
+                        kc_email = kc_user.get("email", "?")
+                        kc_id = kc_user.get("id", "?")
+                        resolution_trace.append({"step": "User Found", "status": "ok",
+                            "detail": f"Matched via <strong>{match_method}</strong>: username=<code>{escape(kc_username)}</code> email=<code>{escape(str(kc_email))}</code> id=<code>{escape(kc_id[:12])}...</code>"})
+
+                        # Step 5: Get user's groups
+                        resp = await hc.get(f"{admin_base}/users/{kc_id}/groups", headers=headers)
+                        resp.raise_for_status()
+                        external_groups = [g["name"] for g in resp.json() if isinstance(g, dict) and "name" in g]
+                        if external_groups:
+                            resolution_trace.append({"step": "User Groups", "status": "ok",
+                                "detail": f"{len(external_groups)} group(s): " + ", ".join(f"<code>{escape(g)}</code>" for g in external_groups)})
+                            resolved_groups = external_groups
+                        else:
+                            resolution_trace.append({"step": "User Groups", "status": "warn",
+                                "detail": "User exists but has no group memberships in Keycloak"})
+                    else:
+                        resolution_trace.append({"step": "User Not Found", "status": "fail",
+                            "detail": f"No user matched <code>{escape(user)}</code> in realm <code>{escape(kc.realm)}</code> by any search method"})
+
+                # Map groups to policies (same as before)
+                if resolved_groups:
                     from rampart.app.group_mapping_store import list_mappings
                     from rampart.app.group_store import get_group
                     mappings = list_mappings(resolver_cfg.mappings_path)
-                    external_set = set(external_groups)
+                    external_set = set(resolved_groups)
                     matched_policy_ids: set[str] = set()
                     group_policy_map: dict[str, list[str]] = {}
 
@@ -443,8 +513,7 @@ async def playground_evaluate(request: Request) -> HTMLResponse:
                             else:
                                 resolution_trace.append({"step": "Group Mapping", "status": "warn",
                                     "detail": f"<code>{escape(mapping.external_group)}</code> → <code>{escape(mapping.rampart_group_id)}</code> (RAMPART group not found)"})
-                        # Show unmapped external groups
-                    unmapped = [g for g in external_groups if g not in {m.external_group for m in mappings if m.enabled}]
+                    unmapped = [g for g in resolved_groups if g not in {m.external_group for m in mappings if m.enabled}]
                     for g in unmapped:
                         resolution_trace.append({"step": "Group Mapping", "status": "skip",
                             "detail": f"<code>{escape(g)}</code> — no mapping configured (ignored)"})
@@ -464,14 +533,12 @@ async def playground_evaluate(request: Request) -> HTMLResponse:
                         resolution_trace.append({"step": "Fallback", "status": "info",
                             "detail": f"Using {len(selected_policies)} policies from client <code>{escape(test_client_id)}</code>"})
                 else:
-                    resolution_trace.append({"step": "Keycloak Query", "status": "warn",
-                        "detail": f"User <code>{escape(user)}</code> not found in Keycloak or has no groups"})
                     selected_policies = _resolve_client_policies(config, test_client_id)
                     resolution_trace.append({"step": "Fallback", "status": "info",
                         "detail": f"Using {len(selected_policies)} policies from client <code>{escape(test_client_id)}</code>"})
             except Exception as exc:
-                resolution_trace.append({"step": "Keycloak Query", "status": "fail",
-                    "detail": f"Error: {escape(str(exc)[:150])}"})
+                resolution_trace.append({"step": "Keycloak Error", "status": "fail",
+                    "detail": f"Error: {escape(str(exc)[:200])}"})
                 selected_policies = _resolve_client_policies(config, test_client_id)
                 resolution_trace.append({"step": "Fallback", "status": "info",
                     "detail": f"Using {len(selected_policies)} policies from client <code>{escape(test_client_id)}</code>"})
