@@ -401,24 +401,90 @@ async def playground_evaluate(request: Request) -> HTMLResponse:
     user = openai_request.get("user", "")
     resolved_groups = []
     mapped_rampart_groups = []
+    resolution_trace: list[dict] = []  # step-by-step trace for UI
     if test_client_id:
+        client_record = get_client(test_client_id, config.clients.path)
+        resolution_trace.append({"step": "Client Lookup", "status": "ok" if client_record else "fail",
+            "detail": f"Found client <code>{escape(test_client_id)}</code>" if client_record else f"Client <code>{escape(test_client_id)}</code> not found"})
+
         # Try user group resolution first (same precedence as API)
         if user and config.user_group_resolver.enabled:
+            resolution_trace.append({"step": "User Group Resolver", "status": "info", "detail": f"Resolver enabled, looking up <code>{escape(user)}</code>"})
             try:
-                from rampart.app.main import resolve_policies_for_user
-                result = await resolve_policies_for_user(config, user)
-                if result and result.policies:
-                    selected_policies = result.policies
-                    resolved_groups = result.external_groups
-                    mapped_rampart_groups = result.rampart_group_ids
+                from rampart.app.main import resolve_policies_for_user, _get_or_create_resolver
+                resolver_cfg = config.user_group_resolver
+                resolver = _get_or_create_resolver(resolver_cfg)
+                external_groups = await resolver.resolve(user)
+                if external_groups:
+                    resolution_trace.append({"step": "Keycloak Query", "status": "ok",
+                        "detail": f"User found. Returned {len(external_groups)} group(s): " + ", ".join(f"<code>{escape(g)}</code>" for g in external_groups)})
+                    resolved_groups = external_groups
+
+                    # Map to RAMPART groups
+                    from rampart.app.group_mapping_store import list_mappings
+                    from rampart.app.group_store import get_group
+                    mappings = list_mappings(resolver_cfg.mappings_path)
+                    external_set = set(external_groups)
+                    matched_policy_ids: set[str] = set()
+                    group_policy_map: dict[str, list[str]] = {}
+
+                    for mapping in mappings:
+                        if not mapping.enabled:
+                            continue
+                        if mapping.external_group in external_set:
+                            group = get_group(mapping.rampart_group_id)
+                            if group:
+                                mapped_rampart_groups.append(group.id)
+                                group_policies = group.policy_ids or []
+                                group_policy_map[group.id] = group_policies
+                                matched_policy_ids.update(group_policies)
+                                resolution_trace.append({"step": "Group Mapping", "status": "ok",
+                                    "detail": f"<code>{escape(mapping.external_group)}</code> → <code>{escape(group.id)}</code> ({len(group_policies)} policies: {', '.join(f'<code>{escape(p)}</code>' for p in group_policies) or 'none'})"})
+                            else:
+                                resolution_trace.append({"step": "Group Mapping", "status": "warn",
+                                    "detail": f"<code>{escape(mapping.external_group)}</code> → <code>{escape(mapping.rampart_group_id)}</code> (RAMPART group not found)"})
+                        # Show unmapped external groups
+                    unmapped = [g for g in external_groups if g not in {m.external_group for m in mappings if m.enabled}]
+                    for g in unmapped:
+                        resolution_trace.append({"step": "Group Mapping", "status": "skip",
+                            "detail": f"<code>{escape(g)}</code> — no mapping configured (ignored)"})
+
+                    if matched_policy_ids:
+                        enabled_policies = [p for p in config.policies if p.enabled]
+                        selected_policies = [p for p in enabled_policies if p.id in matched_policy_ids]
+                        if len(group_policy_map) > 1:
+                            resolution_trace.append({"step": "Policy Union", "status": "info",
+                                "detail": f"Multiple groups matched. Union of {len(matched_policy_ids)} unique policies from {len(group_policy_map)} groups."})
+                        resolution_trace.append({"step": "Resolution", "status": "ok",
+                            "detail": f"Using <strong>{len(selected_policies)} policies</strong> from user group resolution"})
+                    else:
+                        resolution_trace.append({"step": "Group Mapping", "status": "warn",
+                            "detail": "No mappings matched — falling back to client policies"})
+                        selected_policies = _resolve_client_policies(config, test_client_id)
+                        resolution_trace.append({"step": "Fallback", "status": "info",
+                            "detail": f"Using {len(selected_policies)} policies from client <code>{escape(test_client_id)}</code>"})
                 else:
+                    resolution_trace.append({"step": "Keycloak Query", "status": "warn",
+                        "detail": f"User <code>{escape(user)}</code> not found in Keycloak or has no groups"})
                     selected_policies = _resolve_client_policies(config, test_client_id)
-                    if result:
-                        resolved_groups = result.external_groups
-            except Exception:
+                    resolution_trace.append({"step": "Fallback", "status": "info",
+                        "detail": f"Using {len(selected_policies)} policies from client <code>{escape(test_client_id)}</code>"})
+            except Exception as exc:
+                resolution_trace.append({"step": "Keycloak Query", "status": "fail",
+                    "detail": f"Error: {escape(str(exc)[:150])}"})
                 selected_policies = _resolve_client_policies(config, test_client_id)
+                resolution_trace.append({"step": "Fallback", "status": "info",
+                    "detail": f"Using {len(selected_policies)} policies from client <code>{escape(test_client_id)}</code>"})
+        elif user and not config.user_group_resolver.enabled:
+            resolution_trace.append({"step": "User Group Resolver", "status": "skip",
+                "detail": "Resolver not enabled in Settings — user field ignored for policy resolution"})
+            selected_policies = _resolve_client_policies(config, test_client_id)
+            resolution_trace.append({"step": "Resolution", "status": "info",
+                "detail": f"Using {len(selected_policies)} policies from client <code>{escape(test_client_id)}</code>"})
         else:
             selected_policies = _resolve_client_policies(config, test_client_id)
+            resolution_trace.append({"step": "Resolution", "status": "info",
+                "detail": f"No user identity provided. Using {len(selected_policies)} policies from client <code>{escape(test_client_id)}</code>"})
         if not selected_policies:
             return HTMLResponse(f'<div class="notice error">Client {escape(test_client_id)} not found or has no policies.</div>')
     else:
@@ -470,6 +536,7 @@ async def playground_evaluate(request: Request) -> HTMLResponse:
         "resolved_groups": resolved_groups,
         "mapped_rampart_groups": mapped_rampart_groups,
         "policy_ids": [p.id for p in selected_policies],
+        "trace": resolution_trace,
     }
     results_html = _render_results(response, policy_results, eval_ms, llm_response_html, resolution_ctx)
     return HTMLResponse(results_html)
@@ -778,35 +845,42 @@ def _render_results(response, policy_results: list[dict], eval_ms: int, llm_resp
     resolution_html = ""
     ctx = resolution_ctx or {}
     if ctx.get("client_id"):
-        rows = []
-        rows.append(f'<div class="pg-res-row"><span class="pg-res-label">Client</span><code>{escape(ctx["client_id"])}</code></div>')
-        if ctx.get("user"):
-            rows.append(f'<div class="pg-res-row"><span class="pg-res-label">User</span><code>{escape(ctx["user"])}</code></div>')
-        if ctx.get("resolved_groups"):
-            group_pills = " ".join(f'<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;background:rgba(210,153,34,0.15);color:#d29922">{escape(g)}</span>' for g in ctx["resolved_groups"])
-            rows.append(f'<div class="pg-res-row"><span class="pg-res-label">Keycloak Groups</span><div>{group_pills}</div></div>')
-        else:
-            if ctx.get("user"):
-                rows.append(f'<div class="pg-res-row"><span class="pg-res-label">Keycloak Groups</span><span class="muted">No groups resolved</span></div>')
-        if ctx.get("mapped_rampart_groups"):
-            rg_pills = " ".join(f'<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;background:rgba(63,185,80,0.15);color:#3fb950">{escape(g)}</span>' for g in ctx["mapped_rampart_groups"])
-            rows.append(f'<div class="pg-res-row"><span class="pg-res-label">RAMPART Groups</span><div>{rg_pills}</div></div>')
+        trace = ctx.get("trace", [])
+        status_icons = {"ok": "&#x2705;", "fail": "&#x274C;", "warn": "&#x26A0;&#xFE0F;", "info": "&#x2139;&#xFE0F;", "skip": "&#x23ED;&#xFE0F;"}
+        trace_rows = []
+        for t in trace:
+            icon = status_icons.get(t["status"], "")
+            step = escape(t["step"])
+            detail = t["detail"]  # already contains safe HTML from builder
+            trace_rows.append(
+                f'<div class="pg-trace-row">'
+                f'<span class="pg-trace-icon">{icon}</span>'
+                f'<span class="pg-trace-step">{step}</span>'
+                f'<span class="pg-trace-detail">{detail}</span>'
+                f'</div>'
+            )
+        trace_html = "".join(trace_rows) if trace_rows else '<div class="muted">No resolution steps</div>'
+
+        summary_parts = []
         if ctx.get("policy_ids"):
             pol_pills = " ".join(f'<span style="display:inline-block;padding:2px 6px;border-radius:3px;font-size:10px;background:rgba(56,139,253,0.1);color:#58a6ff">{escape(p)}</span>' for p in ctx["policy_ids"])
-            rows.append(f'<div class="pg-res-row"><span class="pg-res-label">Applied Policies</span><div style="display:flex;flex-wrap:wrap;gap:3px">{pol_pills}</div></div>')
-        source = "User group resolution" if ctx.get("resolved_groups") else ("Client group" if ctx.get("mapped_rampart_groups") else "Client direct / fallback")
-        rows.append(f'<div class="pg-res-row"><span class="pg-res-label">Resolution</span><span class="muted">{source}</span></div>')
+            summary_parts.append(f'<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)"><div class="pg-trace-step" style="margin-bottom:4px">Applied Policies ({len(ctx["policy_ids"])})</div><div style="display:flex;flex-wrap:wrap;gap:3px">{pol_pills}</div></div>')
+
         resolution_html = f"""
         <div>
           <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:8px">Identity &amp; Policy Resolution</div>
-          <div style="display:flex;flex-direction:column;gap:8px">{"".join(rows)}</div>
+          <div style="display:flex;flex-direction:column;gap:4px">{trace_html}</div>
+          {"".join(summary_parts)}
         </div>
         """
 
     return f"""
       <style>
-        .pg-res-row {{ display:flex;gap:8px;align-items:flex-start;font-size:13px; }}
-        .pg-res-label {{ color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:0.5px;min-width:120px;flex-shrink:0;padding-top:2px; }}
+        .pg-trace-row {{ display:flex;gap:6px;align-items:flex-start;font-size:12px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.03); }}
+        .pg-trace-icon {{ flex-shrink:0;width:18px;text-align:center;font-size:11px; }}
+        .pg-trace-step {{ flex-shrink:0;min-width:110px;color:var(--text);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:0.3px;padding-top:1px; }}
+        .pg-trace-detail {{ color:var(--text-secondary);font-size:12px;line-height:1.5; }}
+        .pg-trace-detail code {{ font-size:11px;background:var(--bg);padding:1px 4px;border-radius:3px; }}
       </style>
       <div class="pg-results">
         {resolution_html}
