@@ -38,9 +38,9 @@ def load_group_store(path: Optional[str] = None) -> GroupStore:
 
 
 def save_group_store(store: GroupStore, path: Optional[str] = None) -> None:
-    from rampart.app.file_utils import atomic_write_json
+    from rampart.app.file_utils import locked_atomic_write_json
     store_path = Path(path or GROUP_STORE_PATH)
-    atomic_write_json(store_path, store.model_dump())
+    locked_atomic_write_json(store_path, store.model_dump())
 
 
 def list_groups(path: Optional[str] = None) -> list[GroupRecord]:

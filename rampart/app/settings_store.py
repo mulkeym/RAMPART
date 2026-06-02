@@ -53,5 +53,5 @@ def load_settings(path: str) -> RuntimeSettings:
 
 
 def save_settings(settings: RuntimeSettings, path: str) -> None:
-    from rampart.app.file_utils import atomic_write_json
-    atomic_write_json(path, settings.model_dump(exclude_none=True))
+    from rampart.app.file_utils import locked_atomic_write_json
+    locked_atomic_write_json(path, settings.model_dump(exclude_none=True))

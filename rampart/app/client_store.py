@@ -64,9 +64,9 @@ def load_client_store(path: Optional[str] = None) -> ClientStore:
 
 
 def save_client_store(store: ClientStore, path: Optional[str] = None) -> None:
-    from rampart.app.file_utils import atomic_write_json
+    from rampart.app.file_utils import locked_atomic_write_json
     store_path = Path(path or get_config().clients.path)
-    atomic_write_json(store_path, store.model_dump())
+    locked_atomic_write_json(store_path, store.model_dump())
 
 
 def list_clients(path: Optional[str] = None) -> list[ClientRecord]:

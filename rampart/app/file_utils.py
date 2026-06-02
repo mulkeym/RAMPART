@@ -5,11 +5,31 @@ data corruption from concurrent access or mid-write crashes.
 """
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Generator
+
+
+@contextmanager
+def file_lock(path: str | Path) -> Generator[None, None, None]:
+    """Acquire an exclusive file lock for the duration of a block.
+
+    Uses a separate .lock file so the data file itself is never held open
+    during the lock. Works across multiple uvicorn workers in the same container.
+    """
+    lock_path = Path(str(path) + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR)
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        os.close(lock_fd)
 
 
 def atomic_write_json(path: str | Path, data: Any, indent: int = 2) -> None:
@@ -38,3 +58,20 @@ def atomic_write_json(path: str | Path, data: Any, indent: int = 2) -> None:
         except OSError:
             pass
         raise
+
+
+def locked_atomic_write_json(path: str | Path, data: Any, indent: int = 2) -> None:
+    """Atomic write with an exclusive file lock. Use for stores where
+    multiple workers may write concurrently."""
+    with file_lock(path):
+        atomic_write_json(path, data, indent)
+
+
+def locked_read_json(path: str | Path) -> Any:
+    """Read JSON with a shared-compatible lock. Returns None if file doesn't exist."""
+    p = Path(path)
+    if not p.exists():
+        return None
+    with file_lock(path):
+        with p.open("r", encoding="utf-8") as f:
+            return json.load(f)
