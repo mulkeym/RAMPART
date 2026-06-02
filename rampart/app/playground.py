@@ -417,7 +417,7 @@ async def playground_evaluate(request: Request) -> HTMLResponse:
                 external_groups = await resolver.resolve(user)
                 if external_groups:
                     resolution_trace.append({"step": "Keycloak Query", "status": "ok",
-                        "detail": f"User found. Returned {len(external_groups)} group(s): " + ", ".join(f"<code>{escape(g)}</code>" for g in external_groups)})
+                        "detail": f"User found (searched by email, then username, then general). Returned {len(external_groups)} group(s): " + ", ".join(f"<code>{escape(g)}</code>" for g in external_groups)})
                     resolved_groups = external_groups
 
                     # Map to RAMPART groups

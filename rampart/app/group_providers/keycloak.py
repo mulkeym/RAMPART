@@ -19,15 +19,34 @@ class KeycloakGroupProvider(GroupProvider):
         admin_base = f"{self.base_url}/admin/realms/{self.realm}"
         headers = {"Authorization": f"Bearer {token}"}
         async with httpx.AsyncClient(timeout=self.timeout, verify=self.verify_ssl) as client:
-            resp = await client.get(f"{admin_base}/users", params={"email": user_id, "exact": "true"}, headers=headers)
-            resp.raise_for_status()
-            users = resp.json()
-            if not users:
+            # Try email first, then username
+            kc_user = await self._find_user(client, admin_base, headers, user_id)
+            if not kc_user:
                 return []
-            kc_user_id = users[0]["id"]
+            kc_user_id = kc_user["id"]
             resp = await client.get(f"{admin_base}/users/{kc_user_id}/groups", headers=headers)
             resp.raise_for_status()
             return [g["name"] for g in resp.json() if isinstance(g, dict) and "name" in g]
+
+    async def _find_user(self, client: httpx.AsyncClient, admin_base: str, headers: dict, user_id: str):
+        """Find a Keycloak user by email or username."""
+        # Try email match first (most common — OpenAI user field is typically email)
+        resp = await client.get(f"{admin_base}/users", params={"email": user_id, "exact": "true"}, headers=headers)
+        resp.raise_for_status()
+        users = resp.json()
+        if users:
+            return users[0]
+        # Fall back to username match
+        resp = await client.get(f"{admin_base}/users", params={"username": user_id, "exact": "true"}, headers=headers)
+        resp.raise_for_status()
+        users = resp.json()
+        if users:
+            return users[0]
+        # Try general search as last resort (partial match)
+        resp = await client.get(f"{admin_base}/users", params={"search": user_id}, headers=headers)
+        resp.raise_for_status()
+        users = resp.json()
+        return users[0] if users else None
 
     async def list_realm_groups(self) -> list[str]:
         """Fetch all groups defined in the Keycloak realm."""
