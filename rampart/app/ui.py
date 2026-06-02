@@ -87,33 +87,21 @@ async def keycloak_login(request: Request, next: str = "/ui/policies") -> Redire
 
 @router.get("/auth/keycloak/callback", response_class=HTMLResponse)
 async def keycloak_callback(request: Request, code: str = "", state: str = "/ui/policies", error: Optional[str] = None, error_description: Optional[str] = None) -> HTMLResponse:
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.warning("KEYCLOAK CALLBACK RAW URL: %s", str(request.url))
-    logger.warning("KEYCLOAK CALLBACK PARAMS: code=%s error=%s state=%s", repr(code), repr(error), repr(state))
-
     if error:
         detail = error_description or error
-        logger.warning("Keycloak callback error: %s — %s", error, error_description)
         return RedirectResponse(f"/login?error=Keycloak:+{quote(detail[:200])}", status_code=303)
     if not code:
-        logger.warning("Keycloak callback: no authorization code received")
         return RedirectResponse("/login?error=No+authorization+code+received", status_code=303)
 
     config = get_config()
     kc = config.auth.keycloak_admin
-    logger.warning("KEYCLOAK kc.enabled=%s base_url=%s realm=%s client_id=%s", kc.enabled, kc.base_url, kc.realm, kc.client_id)
     if not kc.enabled:
-        logger.warning("KEYCLOAK DISABLED — redirecting to login")
         return RedirectResponse("/login?error=Keycloak+SSO+is+not+enabled", status_code=303)
 
     import httpx
-    # Build callback URL from the actual request URL the browser used (not internal Docker URL)
     callback_url = str(request.url).split("?")[0]
     token_url = f"{kc.base_url.rstrip('/')}/realms/{kc.realm}/protocol/openid-connect/token"
     userinfo_url = f"{kc.base_url.rstrip('/')}/realms/{kc.realm}/protocol/openid-connect/userinfo"
-
-    logger.warning("KEYCLOAK TOKEN EXCHANGE: callback_url=%s token_url=%s", callback_url, token_url)
 
     try:
         async with httpx.AsyncClient(timeout=10.0, verify=kc.verify_ssl) as client:
@@ -126,7 +114,6 @@ async def keycloak_callback(request: Request, code: str = "", state: str = "/ui/
             if kc.client_secret:
                 token_data["client_secret"] = kc.client_secret
             token_resp = await client.post(token_url, data=token_data)
-            logger.warning("KEYCLOAK TOKEN RESPONSE: %s %s", token_resp.status_code, token_resp.text[:500])
             token_resp.raise_for_status()
             tokens = token_resp.json()
 
@@ -135,15 +122,12 @@ async def keycloak_callback(request: Request, code: str = "", state: str = "/ui/
             })
             info_resp.raise_for_status()
             userinfo = info_resp.json()
-            logger.warning("KEYCLOAK USERINFO: %s", userinfo)
     except Exception as exc:
-        logger.exception("Keycloak token exchange failed")
         audit_event(request, "auth.keycloak_login", result="failure", detail=str(exc))
         return RedirectResponse(f"/login?error=Keycloak+token+exchange+failed:+{quote(str(exc)[:200])}", status_code=303)
 
     username = userinfo.get("preferred_username") or userinfo.get("email") or userinfo.get("sub", "keycloak-user")
     next_url = _safe_next_url(state)
-    logger.warning("KEYCLOAK LOGIN SUCCESS: username=%s next=%s", username, next_url)
     response = RedirectResponse(next_url, status_code=303)
     set_session_cookie(response, username, password_change_pending=False)
     audit_event(request, "auth.keycloak_login", actor=username, result="success", detail=f"sub={userinfo.get('sub')}")
