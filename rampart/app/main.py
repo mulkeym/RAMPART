@@ -120,6 +120,8 @@ async def evaluate(payload: EvaluationRequest, request: Request) -> EvaluationRe
     start = time()
     response = await engine.evaluate(payload.request)
     eval_ms = int((time() - start) * 1000)
+    if response.violations and payload.include_sanitized_request:
+        response = await engine.sanitize_response(payload.request, response)
     _track_evaluation(config, request, response, client_record, policies, user=user)
     _log_prompt(request, payload.request, response, policies, client_record, user, eval_ms, source="api")
     if client_record:
@@ -161,6 +163,10 @@ async def evaluate_chat_completions(payload: dict[str, Any], request: Request):
     if not config.upstream.enabled:
         return response
     upstream = _effective_upstream(config, client_record)
+    # For gateway proxying, use deterministic sanitization (fast, no LLM call)
+    if response.violations and not response.sanitized_request:
+        from rampart.app.policy.sanitizer import sanitize_request
+        response.sanitized_request = sanitize_request(payload)
     upstream_payload = response.sanitized_request if response.violations and response.sanitized_request else payload
     upstream_payload = _apply_model_override(upstream_payload, upstream.model)
 

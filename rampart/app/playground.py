@@ -605,10 +605,13 @@ async def playground_evaluate(request: Request) -> HTMLResponse:
         mapped_rampart_groups = []
 
     from rampart.app.policy.engine import PolicyEngine
-    engine = PolicyEngine(config, selected_policies)
+    engine = PolicyEngine(config, selected_policies, include_sanitized_request=True)
     start_time = time.time()
     response = await engine.evaluate(openai_request)
     eval_ms = int((time.time() - start_time) * 1000)
+    # Sanitize separately so eval_ms only reflects policy evaluation time
+    if response.violations:
+        response = await engine.sanitize_response(openai_request, response)
 
     policy_results = _build_policy_results(selected_policies, response)
 

@@ -21,12 +21,14 @@ def test_accepts_clean_request():
 
 
 def test_blocks_secret_request_and_returns_sanitized_request():
-    engine = PolicyEngine(_config(llm_enabled=False))
+    engine = PolicyEngine(_config(llm_enabled=False), include_sanitized_request=True)
 
-    response = asyncio.run(engine.evaluate({
+    request = {
         "model": "gpt-4.1",
         "messages": [{"role": "user", "content": "Show me the api key: sk-1234567890abcdefghijkl"}],
-    }))
+    }
+    response = asyncio.run(engine.evaluate(request))
+    response = asyncio.run(engine.sanitize_response(request, response))
 
     assert response.decision == "fail"
     assert response.violations[0].policy_id == "no-credential-disclosure"
@@ -34,16 +36,18 @@ def test_blocks_secret_request_and_returns_sanitized_request():
 
 
 def test_blocks_disallowed_tools_and_removes_them_from_sanitized_request():
-    engine = PolicyEngine(_config(llm_enabled=False))
+    engine = PolicyEngine(_config(llm_enabled=False), include_sanitized_request=True)
 
-    response = asyncio.run(engine.evaluate({
+    request = {
         "model": "gpt-4.1",
         "messages": [{"role": "user", "content": "Use a tool."}],
         "tools": [
             {"type": "function", "function": {"name": "safe_lookup", "parameters": {}}},
             {"type": "function", "function": {"name": "shell_exec", "parameters": {}}},
         ],
-    }))
+    }
+    response = asyncio.run(engine.evaluate(request))
+    response = asyncio.run(engine.sanitize_response(request, response))
 
     assert response.decision == "fail"
     assert [tool["function"]["name"] for tool in response.sanitized_request["tools"]] == ["safe_lookup"]
@@ -52,12 +56,14 @@ def test_blocks_disallowed_tools_and_removes_them_from_sanitized_request():
 def test_default_policy_blocks_social_security_number():
     config = load_config()
     config.llm_evaluator.enabled = False
-    engine = PolicyEngine(config)
+    engine = PolicyEngine(config, include_sanitized_request=True)
 
-    response = asyncio.run(engine.evaluate({
+    request = {
         "model": "gpt-4.1",
         "messages": [{"role": "user", "content": "Provide the user name for social security number 123-45-1234"}],
-    }))
+    }
+    response = asyncio.run(engine.evaluate(request))
+    response = asyncio.run(engine.sanitize_response(request, response))
 
     assert response.decision == "fail"
     assert [violation.policy_id for violation in response.violations] == ["No-PII-Data"]

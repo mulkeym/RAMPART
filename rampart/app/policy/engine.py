@@ -29,13 +29,9 @@ class PolicyEngine:
         # Fail fast: skip LLM/vision checks if deterministic checks already block
         has_deterministic_block = any(_is_blocking(v, self.policies) for v in deterministic_violations)
         if has_deterministic_block:
-            sanitized = None
-            if deterministic_violations and self._should_sanitize():
-                sanitized = sanitize_request(request, denied_tools=denied_tools)
             return EvaluationResponse(
                 decision="fail",
                 violations=deterministic_violations,
-                sanitized_request=sanitized,
             )
 
         llm_violations, (vision_violations, vision_warnings) = await asyncio.gather(
@@ -44,22 +40,27 @@ class PolicyEngine:
         )
         violations = _dedupe_violations(deterministic_violations + llm_violations + vision_violations)
         decision = "fail" if any(_is_blocking(v, self.policies) for v in violations) else "accept"
-        sanitized = None
-        if violations and self._should_sanitize():
-            # Deterministic sanitization (regex redaction, tool stripping)
-            sanitized = sanitize_request(request, denied_tools=denied_tools)
-            # LLM sanitization for violations caught by LLM/vision (not deterministic)
-            llm_sourced = [v for v in violations if v.source in ("llm", "vision")]
-            if llm_sourced:
-                llm_sanitized = await self.llm_evaluator.sanitize(sanitized or request, llm_sourced)
-                if llm_sanitized:
-                    sanitized = llm_sanitized
         return EvaluationResponse(
             decision=decision,
             violations=violations,
-            sanitized_request=sanitized,
             warnings=vision_warnings,
         )
+
+    async def sanitize_response(self, request: dict[str, Any], response: EvaluationResponse) -> EvaluationResponse:
+        """Generate a sanitized request for a response with violations. Call separately from evaluate."""
+        if not response.violations or not self._should_sanitize():
+            return response
+        _, denied_tools = self._evaluate_deterministic(request)
+        # Deterministic sanitization (regex redaction, tool stripping)
+        sanitized = sanitize_request(request, denied_tools=denied_tools)
+        # LLM sanitization for violations caught by LLM/vision
+        llm_sourced = [v for v in response.violations if v.source in ("llm", "vision")]
+        if llm_sourced:
+            llm_sanitized = await self.llm_evaluator.sanitize(sanitized, llm_sourced)
+            if llm_sanitized:
+                sanitized = llm_sanitized
+        response.sanitized_request = sanitized
+        return response
 
     async def post_evaluate(self, response_text: str) -> list[Violation]:
         """Evaluate an upstream LLM response against post-stage policies."""
