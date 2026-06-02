@@ -52,6 +52,9 @@ async def login(request: Request) -> HTMLResponse:
     username = form.get("username", "")
     password = form.get("password", "")
     next_url = _safe_next_url(form.get("next", "/ui/policies"))
+    if not username or not password:
+        audit_event(request, "auth.login", actor=username or None, result="failure", detail="missing credentials")
+        return HTMLResponse(_login_page(next_url, "Username and password are required."), status_code=401)
     if not authenticate(username, password):
         audit_event(request, "auth.login", actor=username or None, result="failure", detail="invalid credentials")
         return HTMLResponse(_login_page(next_url, "Invalid username or password."), status_code=401)
