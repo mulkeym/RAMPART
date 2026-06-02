@@ -95,7 +95,10 @@ def _playground_page(config, actor: Optional[str], results_html: str = "") -> st
           </div>
           <div class="pg-user-field panel" style="padding:12px 16px;margin-top:8px" id="pg-user-section">
             <label style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:6px;display:block">User Identity (optional)</label>
-            <input name="user_field" placeholder="email@example.com — for testing group-based policy resolution" style="width:100%">
+            <div style="display:flex;gap:8px;align-items:center">
+              <input name="user_field" placeholder="email@example.com — for testing group-based policy resolution" style="flex:1">
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);white-space:nowrap;margin:0;cursor:pointer"><input type="checkbox" name="force_refresh" style="width:auto"> Force refresh</label>
+            </div>
           </div>
           <div id="pg-tools-section" style="display:none">
             <div class="panel" style="padding:16px;margin-top:8px">
@@ -416,7 +419,11 @@ async def playground_evaluate(request: Request) -> HTMLResponse:
                 kc = resolver_cfg.keycloak
                 resolver = _get_or_create_resolver(resolver_cfg)
 
-                # Check cache first
+                # Check cache first (force refresh if requested)
+                force_refresh = form.get("force_refresh") == "on"
+                if force_refresh and resolver.purge_user(user):
+                    resolution_trace.append({"step": "Cache Purge", "status": "ok",
+                        "detail": f"Force refresh: purged cached entry for <code>{escape(user)}</code>"})
                 cache_info = resolver.check_cache(user)
                 if cache_info and not cache_info["expired"]:
                     ttl_min = cache_info["ttl_remaining"] // 60
