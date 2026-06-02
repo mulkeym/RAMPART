@@ -460,41 +460,41 @@ async def update_settings(request: Request) -> HTMLResponse:
     config = get_config()
     form = await _form_data(request)
     try:
-        settings = RuntimeSettings(
-            tls_verify=form.get("tls_verify") == "on",
-            llm_evaluator_enabled=form.get("llm_evaluator_enabled") == "on",
-            llm_evaluator_base_url=form.get("llm_evaluator_base_url", "").strip(),
-            llm_evaluator_model=form.get("llm_evaluator_model", "").strip(),
-            llm_evaluator_timeout_seconds=_optional_float(form.get("llm_evaluator_timeout_seconds", "")),
-            llm_evaluator_mode=form.get("llm_evaluator_mode", "").strip(),
-            llm_evaluator_confidence_threshold=_optional_float(form.get("llm_evaluator_confidence_threshold", "")),
-            llm_evaluator_post_llm_enabled=form.get("llm_evaluator_post_llm_enabled") == "on",
-            vision_evaluator_enabled=form.get("vision_evaluator_enabled") == "on",
-            vision_evaluator_base_url=form.get("vision_evaluator_base_url", "").strip(),
-            vision_evaluator_model=form.get("vision_evaluator_model", "").strip(),
-            vision_evaluator_timeout_seconds=_optional_float(form.get("vision_evaluator_timeout_seconds", "")),
-            mcp_enabled=form.get("mcp_enabled") == "on",
-            mcp_admin_key=form.get("mcp_admin_key", "").strip(),
-            mcp_admin_write=form.get("mcp_admin_write") == "on",
-            upstream_enabled=form.get("upstream_enabled") == "on",
-            upstream_base_url=form.get("upstream_base_url", "").strip(),
-            upstream_model=form.get("upstream_model", "").strip(),
-            upstream_api_key=form.get("upstream_api_key", "").strip(),
-            upstream_timeout_seconds=_optional_float(form.get("upstream_timeout_seconds", "")),
-            user_group_resolver_enabled=form.get("user_group_resolver_enabled") == "on",
-            user_group_resolver_provider=form.get("user_group_resolver_provider", "").strip(),
-            user_group_resolver_cache_ttl_seconds=_optional_int(form.get("user_group_resolver_cache_ttl_seconds", "")),
-            user_group_resolver_keycloak_base_url=form.get("user_group_resolver_keycloak_base_url", "").strip(),
-            user_group_resolver_keycloak_realm=form.get("user_group_resolver_keycloak_realm", "").strip(),
-            user_group_resolver_keycloak_client_id=form.get("user_group_resolver_keycloak_client_id", "").strip(),
-            user_group_resolver_keycloak_client_secret=form.get("user_group_resolver_keycloak_client_secret", "").strip(),
-            user_group_resolver_keycloak_verify_ssl=form.get("user_group_resolver_keycloak_verify_ssl") == "on",
-            syslog_enabled=form.get("syslog_enabled") == "on",
-            syslog_protocol=form.get("syslog_protocol", "").strip(),
-            syslog_host=form.get("syslog_host", "").strip(),
-            syslog_port=_optional_int(form.get("syslog_port", "")),
-            syslog_send_interval_seconds=_optional_int(form.get("syslog_send_interval_seconds", "")),
-        )
+        # Load existing settings first to preserve fields from other forms (e.g. Keycloak admin auth)
+        settings = load_settings(config.settings.path)
+        settings.tls_verify = form.get("tls_verify") == "on"
+        settings.llm_evaluator_enabled = form.get("llm_evaluator_enabled") == "on"
+        settings.llm_evaluator_base_url = form.get("llm_evaluator_base_url", "").strip()
+        settings.llm_evaluator_model = form.get("llm_evaluator_model", "").strip()
+        settings.llm_evaluator_timeout_seconds = _optional_float(form.get("llm_evaluator_timeout_seconds", ""))
+        settings.llm_evaluator_mode = form.get("llm_evaluator_mode", "").strip()
+        settings.llm_evaluator_confidence_threshold = _optional_float(form.get("llm_evaluator_confidence_threshold", ""))
+        settings.llm_evaluator_post_llm_enabled = form.get("llm_evaluator_post_llm_enabled") == "on"
+        settings.vision_evaluator_enabled = form.get("vision_evaluator_enabled") == "on"
+        settings.vision_evaluator_base_url = form.get("vision_evaluator_base_url", "").strip()
+        settings.vision_evaluator_model = form.get("vision_evaluator_model", "").strip()
+        settings.vision_evaluator_timeout_seconds = _optional_float(form.get("vision_evaluator_timeout_seconds", ""))
+        settings.mcp_enabled = form.get("mcp_enabled") == "on"
+        settings.mcp_admin_key = form.get("mcp_admin_key", "").strip()
+        settings.mcp_admin_write = form.get("mcp_admin_write") == "on"
+        settings.upstream_enabled = form.get("upstream_enabled") == "on"
+        settings.upstream_base_url = form.get("upstream_base_url", "").strip()
+        settings.upstream_model = form.get("upstream_model", "").strip()
+        settings.upstream_api_key = form.get("upstream_api_key", "").strip()
+        settings.upstream_timeout_seconds = _optional_float(form.get("upstream_timeout_seconds", ""))
+        settings.user_group_resolver_enabled = form.get("user_group_resolver_enabled") == "on"
+        settings.user_group_resolver_provider = form.get("user_group_resolver_provider", "").strip()
+        settings.user_group_resolver_cache_ttl_seconds = _optional_int(form.get("user_group_resolver_cache_ttl_seconds", ""))
+        settings.user_group_resolver_keycloak_base_url = form.get("user_group_resolver_keycloak_base_url", "").strip()
+        settings.user_group_resolver_keycloak_realm = form.get("user_group_resolver_keycloak_realm", "").strip()
+        settings.user_group_resolver_keycloak_client_id = form.get("user_group_resolver_keycloak_client_id", "").strip()
+        settings.user_group_resolver_keycloak_client_secret = form.get("user_group_resolver_keycloak_client_secret", "").strip()
+        settings.user_group_resolver_keycloak_verify_ssl = form.get("user_group_resolver_keycloak_verify_ssl") == "on"
+        settings.syslog_enabled = form.get("syslog_enabled") == "on"
+        settings.syslog_protocol = form.get("syslog_protocol", "").strip()
+        settings.syslog_host = form.get("syslog_host", "").strip()
+        settings.syslog_port = _optional_int(form.get("syslog_port", ""))
+        settings.syslog_send_interval_seconds = _optional_int(form.get("syslog_send_interval_seconds", ""))
     except ValueError as error:
         audit_event(request, "settings.update", actor=actor, result="failure", detail=str(error))
         return HTMLResponse(_settings_form(config, load_settings(config.settings.path), error=str(error), actor=actor), status_code=400)
