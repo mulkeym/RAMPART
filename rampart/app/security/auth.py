@@ -35,7 +35,12 @@ def read_session_user(request: Request, auth_config: Optional[AuthConfig] = None
     except (BadSignature, SignatureExpired):
         return None
     username = data.get("username") if isinstance(data, dict) else None
+    if not username:
+        return None
+    # Accept local admin or any Keycloak-authenticated user
     if username == config.admin_username:
+        return username
+    if config.keycloak_admin.enabled:
         return username
     return None
 
