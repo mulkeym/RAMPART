@@ -2042,8 +2042,8 @@ def _login_page(next_url: str, error: Optional[str]) -> str:
           <label>Username<input name="username" autocomplete="username" autofocus required></label>
           <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
           <div class="actions"><button class="button primary" type="submit">Log In</button></div>
-          {kc_button}
         </form>
+        {kc_button}
       </section>
     """
     return _page("Login", body, None)
