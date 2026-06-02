@@ -125,7 +125,7 @@ async def keycloak_callback(request: Request, code: str = "", state: str = "/ui/
     username = userinfo.get("preferred_username") or userinfo.get("email") or userinfo.get("sub", "keycloak-user")
     next_url = _safe_next_url(state)
     response = RedirectResponse(next_url, status_code=303)
-    set_session_cookie(response, username)
+    set_session_cookie(response, username, password_change_pending=False)
     audit_event(request, "auth.keycloak_login", actor=username, result="success", detail=f"sub={userinfo.get('sub')}")
     return response
 
