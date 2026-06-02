@@ -1035,9 +1035,8 @@ async def delete_group_mapping_route(mapping_id: str, request: Request) -> Redir
 @router.get("/ui/group-mappings/fetch-keycloak-groups")
 async def fetch_keycloak_groups(request: Request):
     from fastapi.responses import JSONResponse
-    redirect = require_ui_user(request)
-    if redirect:
-        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    if not read_session_user(request):
+        return JSONResponse({"error": "Unauthorized — please log in"}, status_code=401)
     config = get_config()
     resolver_cfg = config.user_group_resolver
     if not resolver_cfg.enabled or resolver_cfg.provider != "keycloak":
