@@ -68,7 +68,9 @@ async def keycloak_login(request: Request, next: str = "/ui/policies") -> Redire
     kc = config.auth.keycloak_admin
     if not kc.enabled:
         return RedirectResponse("/login?error=Keycloak+SSO+is+not+enabled", status_code=303)
-    callback_url = str(request.url_for("keycloak_callback"))
+    # Build callback URL from the browser's request, not internal server URL (Docker-safe)
+    base = str(request.base_url).rstrip("/")
+    callback_url = f"{base}/auth/keycloak/callback"
     from urllib.parse import urlencode
     params = urlencode({
         "client_id": kc.client_id,
@@ -83,10 +85,16 @@ async def keycloak_login(request: Request, next: str = "/ui/policies") -> Redire
 
 
 @router.get("/auth/keycloak/callback", response_class=HTMLResponse)
-async def keycloak_callback(request: Request, code: str = "", state: str = "/ui/policies", error: Optional[str] = None) -> HTMLResponse:
+async def keycloak_callback(request: Request, code: str = "", state: str = "/ui/policies", error: Optional[str] = None, error_description: Optional[str] = None) -> HTMLResponse:
+    import logging
+    logger = logging.getLogger(__name__)
+
     if error:
-        return RedirectResponse(f"/login?error=Keycloak+error:+{quote(error)}", status_code=303)
+        detail = error_description or error
+        logger.warning("Keycloak callback error: %s — %s", error, error_description)
+        return RedirectResponse(f"/login?error=Keycloak:+{quote(detail[:200])}", status_code=303)
     if not code:
+        logger.warning("Keycloak callback: no authorization code received")
         return RedirectResponse("/login?error=No+authorization+code+received", status_code=303)
 
     config = get_config()
@@ -95,9 +103,12 @@ async def keycloak_callback(request: Request, code: str = "", state: str = "/ui/
         return RedirectResponse("/login?error=Keycloak+SSO+is+not+enabled", status_code=303)
 
     import httpx
-    callback_url = str(request.url_for("keycloak_callback"))
+    # Build callback URL from the actual request URL the browser used (not internal Docker URL)
+    callback_url = str(request.url).split("?")[0]
     token_url = f"{kc.base_url.rstrip('/')}/realms/{kc.realm}/protocol/openid-connect/token"
     userinfo_url = f"{kc.base_url.rstrip('/')}/realms/{kc.realm}/protocol/openid-connect/userinfo"
+
+    logger.info("Keycloak token exchange: callback_url=%s token_url=%s", callback_url, token_url)
 
     try:
         async with httpx.AsyncClient(timeout=10.0, verify=kc.verify_ssl) as client:
@@ -110,6 +121,7 @@ async def keycloak_callback(request: Request, code: str = "", state: str = "/ui/
             if kc.client_secret:
                 token_data["client_secret"] = kc.client_secret
             token_resp = await client.post(token_url, data=token_data)
+            logger.info("Keycloak token response: %s %s", token_resp.status_code, token_resp.text[:500])
             token_resp.raise_for_status()
             tokens = token_resp.json()
 
@@ -118,12 +130,15 @@ async def keycloak_callback(request: Request, code: str = "", state: str = "/ui/
             })
             info_resp.raise_for_status()
             userinfo = info_resp.json()
+            logger.info("Keycloak userinfo: %s", userinfo)
     except Exception as exc:
+        logger.exception("Keycloak token exchange failed")
         audit_event(request, "auth.keycloak_login", result="failure", detail=str(exc))
-        return RedirectResponse(f"/login?error=Keycloak+token+exchange+failed:+{quote(str(exc)[:100])}", status_code=303)
+        return RedirectResponse(f"/login?error=Keycloak+token+exchange+failed:+{quote(str(exc)[:200])}", status_code=303)
 
     username = userinfo.get("preferred_username") or userinfo.get("email") or userinfo.get("sub", "keycloak-user")
     next_url = _safe_next_url(state)
+    logger.info("Keycloak login success: username=%s next=%s", username, next_url)
     response = RedirectResponse(next_url, status_code=303)
     set_session_cookie(response, username, password_change_pending=False)
     audit_event(request, "auth.keycloak_login", actor=username, result="success", detail=f"sub={userinfo.get('sub')}")
