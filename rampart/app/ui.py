@@ -2039,8 +2039,8 @@ def _login_page(next_url: str, error: Optional[str]) -> str:
         {_notice(None, error)}
         <form class="panel form" method="post" action="/login">
           <input type="hidden" name="next" value="{escape(_safe_next_url(next_url))}">
-          <label>Username<input name="username" autocomplete="username" autofocus required></label>
-          <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+          <label>Username<input name="username" autocomplete="username" autofocus></label>
+          <label>Password<input name="password" type="password" autocomplete="current-password"></label>
           <div class="actions"><button class="button primary" type="submit">Log In</button></div>
         </form>
         {kc_button}
