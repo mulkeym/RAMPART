@@ -68,6 +68,9 @@ class LlmEvaluator:
         return await self.evaluate(request, stage="post")
 
     async def _evaluate_standard(self, request: dict[str, Any], checks: list) -> list[Violation]:
+        llm_config = self.config.llm_evaluator
+        if llm_config.batch_mode and len(checks) > 1:
+            return await self._evaluate_batch(request, checks)
         import asyncio
         request_json = json.dumps(_strip_image_data(request), sort_keys=True, ensure_ascii=True)
         results = await asyncio.gather(*(
@@ -77,6 +80,57 @@ class LlmEvaluator:
         violations: list[Violation] = []
         for result in results:
             violations.extend(result)
+        return violations
+
+    async def _evaluate_batch(self, request: dict[str, Any], checks: list) -> list[Violation]:
+        """Evaluate all policies in a single LLM call. Faster but no violation messages."""
+        from rampart.app.llm.prompts import build_batch_policy_check_prompt
+        llm_config = self.config.llm_evaluator
+        request_json = json.dumps(_strip_image_data(request), sort_keys=True, ensure_ascii=True)
+        prompt = build_batch_policy_check_prompt(request_json, checks)
+        payload = self._build_payload([
+            {"role": "system", "content": "Return only valid JSON."},
+            {"role": "user", "content": prompt},
+        ])
+
+        try:
+            async with httpx.AsyncClient(timeout=llm_config.timeout_seconds, verify=tls_verify()) as client:
+                response = await client.post(
+                    f"{llm_config.base_url.rstrip('/')}/chat/completions",
+                    json=payload,
+                )
+                response.raise_for_status()
+
+            content = response.json()["choices"][0]["message"]["content"]
+            violated_ids = json.loads(_strip_json_fence(content))
+            if not isinstance(violated_ids, list):
+                violated_ids = []
+        except (httpx.HTTPError, KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
+            if not llm_config.fail_closed_on_error:
+                return []
+            return [
+                Violation(
+                    policy_id="llm-evaluator-unavailable",
+                    severity="critical",
+                    category="evaluator_error",
+                    message=f"LLM evaluator failed: {error.__class__.__name__}",
+                    source="llm",
+                )
+            ]
+
+        violated_set = set(violated_ids)
+        policy_map = {policy.id: policy for policy, _ in checks}
+        violations: list[Violation] = []
+        for pid in violated_ids:
+            policy = policy_map.get(pid)
+            if policy:
+                violations.append(Violation(
+                    policy_id=policy.id,
+                    severity=policy.severity,
+                    category=policy.category,
+                    message=policy.description or "Policy violation detected.",
+                    source="llm",
+                ))
         return violations
 
     def _build_payload(self, messages: list[dict], **kwargs) -> dict:

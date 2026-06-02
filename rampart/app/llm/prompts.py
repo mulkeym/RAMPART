@@ -41,6 +41,31 @@ Request:
 """
 
 
+def build_batch_policy_check_prompt(request_json: str, policies: list[tuple]) -> str:
+    """Build a single prompt that checks multiple policies at once. Returns only IDs of violating policies."""
+    policy_list = "\n".join(
+        f"- {policy.id}: {check.instruction or policy.description}"
+        for policy, check in policies
+    )
+    return f"""You are RAMPART, a strict API request firewall evaluator.
+
+Check the request against ALL of the following policies. For each policy,
+determine if the request violates it.
+
+Policies:
+{policy_list}
+
+Request:
+{request_json}
+
+Return only valid JSON — an array of policy IDs that are violated.
+If no policies are violated, return an empty array.
+
+Example: ["policy-1", "policy-3"]
+Or if none violated: []
+"""
+
+
 def build_sanitize_prompt(request_json: str, violations: list[dict]) -> str:
     violation_list = "\n".join(
         f"- [{v.get('policy_id', 'unknown')}] {v.get('message', 'Policy violation')}"

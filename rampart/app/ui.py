@@ -477,6 +477,7 @@ async def update_settings(request: Request) -> HTMLResponse:
         settings.llm_evaluator_confidence_threshold = _optional_float(form.get("llm_evaluator_confidence_threshold", ""))
         settings.llm_evaluator_post_llm_enabled = form.get("llm_evaluator_post_llm_enabled") == "on"
         settings.llm_evaluator_disable_thinking = form.get("llm_evaluator_disable_thinking") == "on"
+        settings.llm_evaluator_batch_mode = form.get("llm_evaluator_batch_mode") == "on"
         settings.vision_evaluator_enabled = form.get("vision_evaluator_enabled") == "on"
         settings.vision_evaluator_base_url = form.get("vision_evaluator_base_url", "").strip()
         settings.vision_evaluator_model = form.get("vision_evaluator_model", "").strip()
@@ -1586,6 +1587,10 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
           <div>
             <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;color:var(--text-secondary)">Disable Thinking <input type="checkbox" name="llm_evaluator_disable_thinking" {"checked" if config.llm_evaluator.disable_thinking else ""} style="width:auto"></label>
             <div class="hint" style="margin-top:4px">Disable internal reasoning for models that support it (e.g. Gemma 4). Reduces latency at the cost of evaluation depth.</div>
+          </div>
+          <div>
+            <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;color:var(--text-secondary)">Batch Mode <input type="checkbox" name="llm_evaluator_batch_mode" {"checked" if config.llm_evaluator.batch_mode else ""} style="width:auto"></label>
+            <div class="hint" style="margin-top:4px">Check all LLM policies in a single API call instead of one per policy. Faster but returns only pass/fail per policy without detailed violation messages.</div>
           </div>
           <label>Base URL<input name="llm_evaluator_base_url" value="{get_value("llm_evaluator_base_url", config.llm_evaluator.base_url)}" placeholder="{escape(config.llm_evaluator.base_url)}"></label>
           <label>Model
