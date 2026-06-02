@@ -12,21 +12,32 @@ from rampart.app.security.passwords import hash_password, verify_password
 
 logger = logging.getLogger(__name__)
 
-INITIAL_PASSWORD = "password123"
+DEFAULT_PASSWORD = "admin"
 
 
 class CredentialState(BaseModel):
     username: str
     password_hash: str
-    password_change_required: bool = True
+    password_change_required: bool = False
 
 
 def get_credential_state(config: AuthConfig) -> CredentialState:
+    """Resolve admin credentials. Priority:
+
+    1. RAMPART_ADMIN_PASSWORD env var (plaintext, hashed at runtime)
+    2. RAMPART_ADMIN_PASSWORD_HASH env var (pre-hashed)
+    3. auth.json file (persisted from UI password change)
+    4. Default: admin / admin
+    """
+    if config.admin_password:
+        return CredentialState(
+            username=config.admin_username,
+            password_hash=hash_password(config.admin_password),
+        )
     if config.admin_password_hash:
         return CredentialState(
             username=config.admin_username,
             password_hash=config.admin_password_hash,
-            password_change_required=False,
         )
     return _load_or_seed_state(config)
 
@@ -44,8 +55,8 @@ def password_change_required(username: str, config: AuthConfig) -> bool:
 
 
 def change_password(username: str, current_password: str, new_password: str, config: AuthConfig) -> Optional[str]:
-    if config.admin_password_hash:
-        return "Password changes are disabled when RAMPART_ADMIN_PASSWORD_HASH is configured."
+    if config.admin_password or config.admin_password_hash:
+        return "Password changes are disabled when RAMPART_ADMIN_PASSWORD or RAMPART_ADMIN_PASSWORD_HASH is set."
     if len(new_password) < 8:
         return "New password must be at least 8 characters."
     if new_password == current_password:
@@ -62,12 +73,14 @@ def change_password(username: str, current_password: str, new_password: str, con
 def _load_or_seed_state(config: AuthConfig) -> CredentialState:
     path = Path(config.auth_state_path)
     if path.exists():
-        with path.open("r", encoding="utf-8") as state_file:
-            return CredentialState.model_validate(json.load(state_file))
+        try:
+            with path.open("r", encoding="utf-8") as state_file:
+                return CredentialState.model_validate(json.load(state_file))
+        except (json.JSONDecodeError, OSError):
+            logger.warning("Corrupt auth state at %s, reseeding", path)
     state = CredentialState(
         username=config.admin_username,
-        password_hash=hash_password(INITIAL_PASSWORD),
-        password_change_required=True,
+        password_hash=hash_password(DEFAULT_PASSWORD),
     )
     _save_state(config, state)
     return state

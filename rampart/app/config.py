@@ -33,6 +33,7 @@ class FailureResponseConfig(BaseModel):
 
 class AuthConfig(BaseModel):
     admin_username: str = "admin"
+    admin_password: str = ""
     admin_password_hash: str = ""
     auth_state_path: str = "data/auth.json"
     session_secret: str = ""
@@ -164,6 +165,7 @@ def get_config() -> AppConfig:
 def _apply_env_overrides(config: AppConfig) -> None:
     auth = config.auth
     auth.admin_username = os.getenv("RAMPART_ADMIN_USERNAME", auth.admin_username)
+    auth.admin_password = os.getenv("RAMPART_ADMIN_PASSWORD", auth.admin_password)
     auth.admin_password_hash = os.getenv("RAMPART_ADMIN_PASSWORD_HASH", auth.admin_password_hash)
     auth.auth_state_path = os.getenv("RAMPART_AUTH_STATE", auth.auth_state_path)
     auth.session_secret = os.getenv("RAMPART_SESSION_SECRET", auth.session_secret)
