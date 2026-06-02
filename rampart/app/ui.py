@@ -499,12 +499,17 @@ async def restore_backup(request: Request):
         with zipfile.ZipFile(buf, "r") as zf:
             # Validate: only allow known paths
             allowed_prefixes = ("data/", "logs/", "policies/")
+            safe_base = Path.cwd().resolve()
             for name in zf.namelist():
                 if not any(name.startswith(p) for p in allowed_prefixes):
                     audit_event(request, "settings.restore", actor=actor, result="failure", detail=f"Rejected path: {name}")
                     return RedirectResponse(f"/ui/settings?message=Backup+contains+invalid+path:+{quote(name)}", status_code=303)
+                resolved = (safe_base / name).resolve()
+                if not str(resolved).startswith(str(safe_base)):
+                    audit_event(request, "settings.restore", actor=actor, result="failure", detail=f"Path traversal blocked: {name}")
+                    return RedirectResponse(f"/ui/settings?message=Backup+contains+unsafe+path:+{quote(name)}", status_code=303)
             for name in zf.namelist():
-                target = Path(name)
+                target = safe_base / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(zf.read(name))
     except zipfile.BadZipFile:
