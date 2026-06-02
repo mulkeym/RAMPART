@@ -13,11 +13,15 @@ from rampart.app.policy.sanitizer import sanitize_request
 
 
 class PolicyEngine:
-    def __init__(self, config: AppConfig, policies: Optional[list[PolicyConfig]] = None):
+    def __init__(self, config: AppConfig, policies: Optional[list[PolicyConfig]] = None, include_sanitized_request: bool = False):
         self.config = config
         self.policies = policies if policies is not None else config.policies
+        self.include_sanitized_request = include_sanitized_request
         self.llm_evaluator = LlmEvaluator(config, self.policies)
         self.vision_evaluator = VisionEvaluator(config, self.policies)
+
+    def _should_sanitize(self) -> bool:
+        return self.include_sanitized_request or self.config.failure_response.include_sanitized_request
 
     async def evaluate(self, request: dict[str, Any]) -> EvaluationResponse:
         deterministic_violations, denied_tools = self._evaluate_deterministic(request)
@@ -26,7 +30,7 @@ class PolicyEngine:
         has_deterministic_block = any(_is_blocking(v, self.policies) for v in deterministic_violations)
         if has_deterministic_block:
             sanitized = None
-            if deterministic_violations and self.config.failure_response.include_sanitized_request:
+            if deterministic_violations and self._should_sanitize():
                 sanitized = sanitize_request(request, denied_tools=denied_tools)
             return EvaluationResponse(
                 decision="fail",
@@ -41,7 +45,7 @@ class PolicyEngine:
         violations = _dedupe_violations(deterministic_violations + llm_violations + vision_violations)
         decision = "fail" if any(_is_blocking(v, self.policies) for v in violations) else "accept"
         sanitized = None
-        if violations and self.config.failure_response.include_sanitized_request:
+        if violations and self._should_sanitize():
             sanitized = sanitize_request(request, denied_tools=denied_tools)
         return EvaluationResponse(
             decision=decision,

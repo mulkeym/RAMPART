@@ -116,7 +116,7 @@ async def evaluate(payload: EvaluationRequest, request: Request) -> EvaluationRe
     client_record = _resolve_client_record(config, request)
     user = extract_user(payload.request)
     policies = await _resolve_policies(config, client_record, user=user)
-    engine = PolicyEngine(config, policies)
+    engine = PolicyEngine(config, policies, include_sanitized_request=payload.include_sanitized_request)
     start = time()
     response = await engine.evaluate(payload.request)
     eval_ms = int((time() - start) * 1000)

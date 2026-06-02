@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 class EvaluationRequest(BaseModel):
     request: dict[str, Any]
+    include_sanitized_request: bool = False
 
 
 class Violation(BaseModel):
