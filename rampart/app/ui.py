@@ -488,6 +488,7 @@ async def update_settings(request: Request) -> HTMLResponse:
             user_group_resolver_keycloak_realm=form.get("user_group_resolver_keycloak_realm", "").strip(),
             user_group_resolver_keycloak_client_id=form.get("user_group_resolver_keycloak_client_id", "").strip(),
             user_group_resolver_keycloak_client_secret=form.get("user_group_resolver_keycloak_client_secret", "").strip(),
+            user_group_resolver_keycloak_verify_ssl=form.get("user_group_resolver_keycloak_verify_ssl") == "on",
             syslog_enabled=form.get("syslog_enabled") == "on",
             syslog_protocol=form.get("syslog_protocol", "").strip(),
             syslog_host=form.get("syslog_host", "").strip(),
@@ -1564,6 +1565,10 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
           <label>Keycloak Realm<input name="user_group_resolver_keycloak_realm" value="{get_value("user_group_resolver_keycloak_realm", config.user_group_resolver.keycloak.realm)}" placeholder="dha"></label>
           <label>Keycloak Client ID<input name="user_group_resolver_keycloak_client_id" value="{get_value("user_group_resolver_keycloak_client_id", config.user_group_resolver.keycloak.client_id)}" placeholder="rampart-service"></label>
           <label>Keycloak Client Secret<input name="user_group_resolver_keycloak_client_secret" value="{get_value("user_group_resolver_keycloak_client_secret", config.user_group_resolver.keycloak.client_secret)}" type="password" autocomplete="off"></label>
+          <div>
+            <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;color:var(--text-secondary)">Verify SSL <input type="checkbox" name="user_group_resolver_keycloak_verify_ssl" {"checked" if config.user_group_resolver.keycloak.verify_ssl else ""} style="width:auto"></label>
+            <div class="hint" style="margin-top:4px">Uncheck for self-signed certificates.</div>
+          </div>
         </fieldset>
         <fieldset class="fieldset">
           <legend>Syslog Forwarder</legend>

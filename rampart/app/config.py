@@ -106,6 +106,7 @@ class KeycloakConfig(BaseModel):
     realm: str = ""
     client_id: str = ""
     client_secret: str = ""
+    verify_ssl: bool = True
 
 
 class UserGroupResolverConfig(BaseModel):
@@ -211,6 +212,7 @@ def _apply_env_overrides(config: AppConfig) -> None:
     resolver.keycloak.realm = os.getenv("RAMPART_KEYCLOAK_REALM", resolver.keycloak.realm)
     resolver.keycloak.client_id = os.getenv("RAMPART_KEYCLOAK_CLIENT_ID", resolver.keycloak.client_id)
     resolver.keycloak.client_secret = os.getenv("RAMPART_KEYCLOAK_CLIENT_SECRET", resolver.keycloak.client_secret)
+    resolver.keycloak.verify_ssl = _env_bool("RAMPART_KEYCLOAK_VERIFY_SSL", resolver.keycloak.verify_ssl)
     syslog = config.syslog
     syslog.enabled = _env_bool("RAMPART_SYSLOG_ENABLED", syslog.enabled)
     syslog.protocol = os.getenv("RAMPART_SYSLOG_PROTOCOL", syslog.protocol)
@@ -282,6 +284,8 @@ def _apply_local_settings(config: AppConfig) -> None:
         config.user_group_resolver.keycloak.client_id = settings.user_group_resolver_keycloak_client_id
     if settings.user_group_resolver_keycloak_client_secret:
         config.user_group_resolver.keycloak.client_secret = settings.user_group_resolver_keycloak_client_secret
+    if settings.user_group_resolver_keycloak_verify_ssl is not None:
+        config.user_group_resolver.keycloak.verify_ssl = settings.user_group_resolver_keycloak_verify_ssl
     if settings.syslog_enabled is not None:
         config.syslog.enabled = settings.syslog_enabled
     if settings.syslog_protocol:

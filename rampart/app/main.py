@@ -216,6 +216,7 @@ def _get_or_create_resolver(resolver_config: UserGroupResolverConfig):
             realm=kc.realm,
             client_id=kc.client_id,
             client_secret=kc.client_secret,
+            verify_ssl=kc.verify_ssl,
         )
     else:
         raise ValueError(f"Unknown group provider: {resolver_config.provider}")
