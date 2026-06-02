@@ -110,7 +110,7 @@ async def health() -> HealthResponse:
     return HealthResponse(status="ok")
 
 
-@app.post("/v1/rampart/evaluate", response_model=EvaluationResponse)
+@app.post("/v1/rampart/evaluate", response_model=EvaluationResponse, response_model_exclude_none=True)
 async def evaluate(payload: EvaluationRequest, request: Request) -> EvaluationResponse:
     config = get_config()
     client_record = _resolve_client_record(config, request)

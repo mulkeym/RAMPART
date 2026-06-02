@@ -28,7 +28,7 @@ class VisionEvaluatorConfig(BaseModel):
 
 
 class FailureResponseConfig(BaseModel):
-    include_sanitized_request: bool = True
+    include_sanitized_request: bool = False
 
 
 class KeycloakAdminAuthConfig(BaseModel):
