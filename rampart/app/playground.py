@@ -464,7 +464,14 @@ async def playground_evaluate(request: Request) -> HTMLResponse:
     else:
         llm_response_html = '<div class="muted">Not sent to upstream &mdash; use "Evaluate &amp; Send" to see LLM response.</div>'
 
-    results_html = _render_results(response, policy_results, eval_ms, llm_response_html)
+    resolution_ctx = {
+        "client_id": test_client_id,
+        "user": user,
+        "resolved_groups": resolved_groups,
+        "mapped_rampart_groups": mapped_rampart_groups,
+        "policy_ids": [p.id for p in selected_policies],
+    }
+    results_html = _render_results(response, policy_results, eval_ms, llm_response_html, resolution_ctx)
     return HTMLResponse(results_html)
 
 
@@ -727,7 +734,7 @@ def _source_breakdown(policy_results: list[dict]) -> str:
     return ", ".join(parts) + " violation" + ("s" if sum(sources.values()) != 1 else "")
 
 
-def _render_results(response, policy_results: list[dict], eval_ms: int, llm_response_html: str) -> str:
+def _render_results(response, policy_results: list[dict], eval_ms: int, llm_response_html: str, resolution_ctx: dict = None) -> str:
     has_match = any(r["status"] == "match" for r in policy_results)
     decision_class = "blocked" if has_match else "accepted"
     decision_label = "BLOCKED" if has_match else "ACCEPTED"
@@ -767,8 +774,42 @@ def _render_results(response, policy_results: list[dict], eval_ms: int, llm_resp
     else:
         sanitized_html = '<div class="muted">No modifications &mdash; original request passes clean.</div>'
 
+    # Resolution context panel (only when testing as a client)
+    resolution_html = ""
+    ctx = resolution_ctx or {}
+    if ctx.get("client_id"):
+        rows = []
+        rows.append(f'<div class="pg-res-row"><span class="pg-res-label">Client</span><code>{escape(ctx["client_id"])}</code></div>')
+        if ctx.get("user"):
+            rows.append(f'<div class="pg-res-row"><span class="pg-res-label">User</span><code>{escape(ctx["user"])}</code></div>')
+        if ctx.get("resolved_groups"):
+            group_pills = " ".join(f'<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;background:rgba(210,153,34,0.15);color:#d29922">{escape(g)}</span>' for g in ctx["resolved_groups"])
+            rows.append(f'<div class="pg-res-row"><span class="pg-res-label">Keycloak Groups</span><div>{group_pills}</div></div>')
+        else:
+            if ctx.get("user"):
+                rows.append(f'<div class="pg-res-row"><span class="pg-res-label">Keycloak Groups</span><span class="muted">No groups resolved</span></div>')
+        if ctx.get("mapped_rampart_groups"):
+            rg_pills = " ".join(f'<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;background:rgba(63,185,80,0.15);color:#3fb950">{escape(g)}</span>' for g in ctx["mapped_rampart_groups"])
+            rows.append(f'<div class="pg-res-row"><span class="pg-res-label">RAMPART Groups</span><div>{rg_pills}</div></div>')
+        if ctx.get("policy_ids"):
+            pol_pills = " ".join(f'<span style="display:inline-block;padding:2px 6px;border-radius:3px;font-size:10px;background:rgba(56,139,253,0.1);color:#58a6ff">{escape(p)}</span>' for p in ctx["policy_ids"])
+            rows.append(f'<div class="pg-res-row"><span class="pg-res-label">Applied Policies</span><div style="display:flex;flex-wrap:wrap;gap:3px">{pol_pills}</div></div>')
+        source = "User group resolution" if ctx.get("resolved_groups") else ("Client group" if ctx.get("mapped_rampart_groups") else "Client direct / fallback")
+        rows.append(f'<div class="pg-res-row"><span class="pg-res-label">Resolution</span><span class="muted">{source}</span></div>')
+        resolution_html = f"""
+        <div>
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:8px">Identity &amp; Policy Resolution</div>
+          <div style="display:flex;flex-direction:column;gap:8px">{"".join(rows)}</div>
+        </div>
+        """
+
     return f"""
+      <style>
+        .pg-res-row {{ display:flex;gap:8px;align-items:flex-start;font-size:13px; }}
+        .pg-res-label {{ color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:0.5px;min-width:120px;flex-shrink:0;padding-top:2px; }}
+      </style>
       <div class="pg-results">
+        {resolution_html}
         <div>
           <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:8px">Policy Results</div>
           <div class="pg-decision {decision_class}">{decision_label}</div>
@@ -780,9 +821,9 @@ def _render_results(response, policy_results: list[dict], eval_ms: int, llm_resp
           <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:8px">Sanitized Request</div>
           {sanitized_html}
         </div>
-        <div>
-          <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:8px">LLM Response</div>
-          {llm_response_html}
-        </div>
+      </div>
+      <div style="margin-top:12px;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px;overflow-y:auto;max-height:500px">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:8px">LLM Response</div>
+        {llm_response_html}
       </div>
     """
