@@ -79,19 +79,26 @@ def write_evaluation_event(
 
 
 def load_evaluation_events(path: str) -> list[dict[str, Any]]:
+    import logging
+    logger = logging.getLogger(__name__)
     event_path = Path(path)
     if not event_path.exists():
         return []
     events: list[dict[str, Any]] = []
+    corrupted = 0
     with event_path.open("r", encoding="utf-8") as event_log:
-        for line in event_log:
+        for line_num, line in enumerate(event_log, 1):
             line = line.strip()
             if not line:
                 continue
             try:
                 events.append(json.loads(line))
             except json.JSONDecodeError:
-                continue
+                corrupted += 1
+                if corrupted <= 10:
+                    logger.warning("Corrupted JSONL at %s:%d — skipping line", path, line_num)
+    if corrupted:
+        logger.warning("Loaded %d events from %s, skipped %d corrupted lines", len(events), path, corrupted)
     return events
 
 
