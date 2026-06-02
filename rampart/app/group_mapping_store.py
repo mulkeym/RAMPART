@@ -35,11 +35,9 @@ def _load(path: Optional[str] = None) -> MappingStore:
 
 
 def _save(store: MappingStore, path: Optional[str] = None) -> None:
+    from rampart.app.file_utils import atomic_write_json
     store_path = Path(path or MAPPING_STORE_PATH)
-    store_path.parent.mkdir(parents=True, exist_ok=True)
-    with store_path.open("w", encoding="utf-8") as f:
-        json.dump(store.model_dump(), f, indent=2, sort_keys=True)
-        f.write("\n")
+    atomic_write_json(store_path, store.model_dump())
 
 
 def list_mappings(path: Optional[str] = None) -> list[GroupMapping]:

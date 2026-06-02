@@ -104,11 +104,9 @@ def load_site_store(path: Optional[str] = None) -> SiteStore:
 
 
 def save_site_store(store: SiteStore, path: Optional[str] = None) -> None:
+    from rampart.app.file_utils import atomic_write_json
     store_path = Path(path or SITE_STORE_PATH)
-    store_path.parent.mkdir(parents=True, exist_ok=True)
-    with store_path.open("w", encoding="utf-8") as f:
-        json.dump(store.model_dump(), f, indent=2, sort_keys=True)
-        f.write("\n")
+    atomic_write_json(store_path, store.model_dump())
 
 
 def list_sites(path: Optional[str] = None) -> list[SiteConfig]:

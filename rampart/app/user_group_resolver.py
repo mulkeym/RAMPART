@@ -30,11 +30,8 @@ class UserGroupResolver:
     def persist(self) -> None:
         if not self._dirty:
             return
-        path = Path(self.cache_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8") as f:
-            json.dump(self._cache, f, sort_keys=True)
-            f.write("\n")
+        from rampart.app.file_utils import atomic_write_json
+        atomic_write_json(self.cache_path, self._cache)
         self._dirty = False
 
     def load(self) -> None:

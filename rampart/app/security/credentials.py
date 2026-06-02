@@ -74,12 +74,9 @@ def _load_or_seed_state(config: AuthConfig) -> CredentialState:
 
 
 def _save_state(config: AuthConfig, state: CredentialState) -> None:
-    path = Path(config.auth_state_path)
+    from rampart.app.file_utils import atomic_write_json
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8") as state_file:
-            json.dump(state.model_dump(), state_file, indent=2, sort_keys=True)
-            state_file.write("\n")
+        atomic_write_json(config.auth_state_path, state.model_dump())
     except OSError as exc:
-        logger.error("Failed to save auth state to %s: %s", path, exc)
+        logger.error("Failed to save auth state to %s: %s", config.auth_state_path, exc)
         raise

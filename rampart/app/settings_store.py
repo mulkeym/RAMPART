@@ -53,8 +53,5 @@ def load_settings(path: str) -> RuntimeSettings:
 
 
 def save_settings(settings: RuntimeSettings, path: str) -> None:
-    settings_path = Path(path)
-    settings_path.parent.mkdir(parents=True, exist_ok=True)
-    with settings_path.open("w", encoding="utf-8") as settings_file:
-        json.dump(settings.model_dump(exclude_none=True), settings_file, indent=2, sort_keys=True)
-        settings_file.write("\n")
+    from rampart.app.file_utils import atomic_write_json
+    atomic_write_json(path, settings.model_dump(exclude_none=True))
