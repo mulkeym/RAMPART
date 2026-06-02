@@ -5,7 +5,6 @@ from rampart.app.config import CheckConfig, PolicyConfig
 
 def build_policy_check_prompt(request_json: str, policy: PolicyConfig, check: CheckConfig, user: str | None = None) -> str:
     plain_text_rule = check.instruction or policy.description
-    user_line = f"\nEnd-User ID: {user}" if user else ""
     return f"""You are RAMPART, a strict API request firewall evaluator.
 
 Evaluate the OpenAI-compatible API request against exactly one policy.
@@ -14,7 +13,7 @@ Policy ID: {policy.id}
 Severity: {policy.severity}
 Category: {policy.category}
 Action: {policy.action}
-Description: {policy.description}{user_line}
+Description: {policy.description}
 
 Plain-text policy rule:
 {plain_text_rule}

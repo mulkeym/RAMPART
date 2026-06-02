@@ -8,7 +8,6 @@ import httpx
 from rampart.app.config import AppConfig, CheckConfig, PolicyConfig
 from rampart.app.llm.prompts import build_policy_check_prompt
 from rampart.app.models import Violation
-from rampart.app.openai.compat import extract_user
 from rampart.app.tls import tls_verify
 
 
@@ -46,9 +45,8 @@ class LlmEvaluator:
     async def _evaluate_standard(self, request: dict[str, Any], checks: list) -> list[Violation]:
         import asyncio
         request_json = json.dumps(_strip_image_data(request), sort_keys=True, ensure_ascii=True)
-        user = extract_user(request)
         results = await asyncio.gather(*(
-            self._evaluate_standard_check(request_json, policy, check, user=user)
+            self._evaluate_standard_check(request_json, policy, check)
             for policy, check in checks
         ))
         violations: list[Violation] = []
@@ -56,9 +54,9 @@ class LlmEvaluator:
             violations.extend(result)
         return violations
 
-    async def _evaluate_standard_check(self, request_json: str, policy: PolicyConfig, check: CheckConfig, user: str | None = None) -> list[Violation]:
+    async def _evaluate_standard_check(self, request_json: str, policy: PolicyConfig, check: CheckConfig) -> list[Violation]:
         llm_config = self.config.llm_evaluator
-        prompt = build_policy_check_prompt(request_json, policy, check, user=user)
+        prompt = build_policy_check_prompt(request_json, policy, check)
         payload = {
             "model": llm_config.model,
             "messages": [
