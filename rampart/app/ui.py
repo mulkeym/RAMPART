@@ -62,6 +62,71 @@ async def login(request: Request) -> HTMLResponse:
     return response
 
 
+@router.get("/auth/keycloak", response_class=HTMLResponse)
+async def keycloak_login(request: Request, next: str = "/ui/policies") -> RedirectResponse:
+    config = get_config()
+    kc = config.auth.keycloak_admin
+    if not kc.enabled:
+        return RedirectResponse("/login?error=Keycloak+SSO+is+not+enabled", status_code=303)
+    callback_url = str(request.url_for("keycloak_callback"))
+    from urllib.parse import urlencode
+    params = urlencode({
+        "client_id": kc.client_id,
+        "redirect_uri": callback_url,
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": next,
+    })
+    auth_url = f"{kc.base_url.rstrip('/')}/realms/{kc.realm}/protocol/openid-connect/auth?{params}"
+    return RedirectResponse(auth_url, status_code=303)
+
+
+@router.get("/auth/keycloak/callback", response_class=HTMLResponse)
+async def keycloak_callback(request: Request, code: str = "", state: str = "/ui/policies", error: Optional[str] = None) -> HTMLResponse:
+    if error:
+        return RedirectResponse(f"/login?error=Keycloak+error:+{quote(error)}", status_code=303)
+    if not code:
+        return RedirectResponse("/login?error=No+authorization+code+received", status_code=303)
+
+    config = get_config()
+    kc = config.auth.keycloak_admin
+    if not kc.enabled:
+        return RedirectResponse("/login?error=Keycloak+SSO+is+not+enabled", status_code=303)
+
+    import httpx
+    callback_url = str(request.url_for("keycloak_callback"))
+    token_url = f"{kc.base_url.rstrip('/')}/realms/{kc.realm}/protocol/openid-connect/token"
+    userinfo_url = f"{kc.base_url.rstrip('/')}/realms/{kc.realm}/protocol/openid-connect/userinfo"
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0, verify=kc.verify_ssl) as client:
+            token_resp = await client.post(token_url, data={
+                "grant_type": "authorization_code",
+                "client_id": kc.client_id,
+                "client_secret": kc.client_secret,
+                "code": code,
+                "redirect_uri": callback_url,
+            })
+            token_resp.raise_for_status()
+            tokens = token_resp.json()
+
+            info_resp = await client.get(userinfo_url, headers={
+                "Authorization": f"Bearer {tokens['access_token']}"
+            })
+            info_resp.raise_for_status()
+            userinfo = info_resp.json()
+    except Exception as exc:
+        audit_event(request, "auth.keycloak_login", result="failure", detail=str(exc))
+        return RedirectResponse(f"/login?error=Keycloak+token+exchange+failed:+{quote(str(exc)[:100])}", status_code=303)
+
+    username = userinfo.get("preferred_username") or userinfo.get("email") or userinfo.get("sub", "keycloak-user")
+    next_url = _safe_next_url(state)
+    response = RedirectResponse(next_url, status_code=303)
+    set_session_cookie(response, username)
+    audit_event(request, "auth.keycloak_login", actor=username, result="success", detail=f"sub={userinfo.get('sub')}")
+    return response
+
+
 @router.get("/change-password", response_class=HTMLResponse)
 async def change_password_form(request: Request, error: Optional[str] = None) -> HTMLResponse:
     actor = read_session_user(request)
@@ -428,6 +493,26 @@ async def update_settings(request: Request) -> HTMLResponse:
     save_settings(settings, config.settings.path)
     audit_event(request, "settings.update", actor=actor, result="success")
     return RedirectResponse("/ui/settings?message=Settings+saved", status_code=303)
+
+
+@router.post("/ui/settings/keycloak-admin", response_class=HTMLResponse)
+async def save_keycloak_admin_settings(request: Request) -> HTMLResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    actor = read_session_user(request)
+    config = get_config()
+    form = await _form_data(request)
+    settings = load_settings(config.settings.path)
+    settings.keycloak_admin_enabled = form.get("keycloak_admin_enabled") == "on"
+    settings.keycloak_admin_base_url = form.get("keycloak_admin_base_url", "").strip()
+    settings.keycloak_admin_realm = form.get("keycloak_admin_realm", "").strip()
+    settings.keycloak_admin_client_id = form.get("keycloak_admin_client_id", "").strip()
+    settings.keycloak_admin_client_secret = form.get("keycloak_admin_client_secret", "").strip()
+    settings.keycloak_admin_verify_ssl = form.get("keycloak_admin_verify_ssl") == "on"
+    save_settings(settings, config.settings.path)
+    audit_event(request, "settings.keycloak_admin", actor=actor, result="success")
+    return RedirectResponse("/ui/settings?message=Keycloak+admin+auth+settings+saved", status_code=303)
 
 
 @router.post("/ui/settings/password", response_class=HTMLResponse)
@@ -1493,6 +1578,24 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
         <div class="actions"><button class="button primary" type="submit">Save Settings</button></div>
       </form>
       <fieldset class="fieldset" style="margin-top:24px">
+        <legend>Keycloak Admin Authentication</legend>
+        <div class="hint">Enable SSO login for the admin UI via Keycloak OIDC. When enabled, a "Login with Keycloak" button appears on the login page alongside local password auth.</div>
+        <form method="post" action="/ui/settings/keycloak-admin" style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+          <div>
+            <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;color:var(--text-secondary)">Enabled <input type="checkbox" name="keycloak_admin_enabled" {"checked" if config.auth.keycloak_admin.enabled else ""} style="width:auto"></label>
+          </div>
+          <label>Base URL<input name="keycloak_admin_base_url" value="{get_value("keycloak_admin_base_url", config.auth.keycloak_admin.base_url)}" placeholder="https://keycloak.example.com"></label>
+          <label>Realm<input name="keycloak_admin_realm" value="{get_value("keycloak_admin_realm", config.auth.keycloak_admin.realm)}" placeholder="master"></label>
+          <label>Client ID<input name="keycloak_admin_client_id" value="{get_value("keycloak_admin_client_id", config.auth.keycloak_admin.client_id)}" placeholder="rampart-admin"></label>
+          <label>Client Secret<input name="keycloak_admin_client_secret" value="{get_value("keycloak_admin_client_secret", config.auth.keycloak_admin.client_secret)}" type="password" autocomplete="off"></label>
+          <div>
+            <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;color:var(--text-secondary)">Verify SSL <input type="checkbox" name="keycloak_admin_verify_ssl" {"checked" if config.auth.keycloak_admin.verify_ssl else ""} style="width:auto"></label>
+            <div class="hint" style="margin-top:4px">Uncheck for self-signed certificates.</div>
+          </div>
+          <div class="actions"><button class="button primary" type="submit">Save Keycloak Settings</button></div>
+        </form>
+      </fieldset>
+      <fieldset class="fieldset" style="margin-top:24px">
         <legend>Admin Password</legend>
         <div class="hint">Change the admin login password. Disabled when RAMPART_ADMIN_PASSWORD or RAMPART_ADMIN_PASSWORD_HASH environment variables are set.</div>
         <form method="post" action="/ui/settings/password" style="margin-top:12px;display:flex;flex-direction:column;gap:10px;max-width:400px">
@@ -1816,6 +1919,18 @@ def _safe_next_url(value: str) -> str:
 
 
 def _login_page(next_url: str, error: Optional[str]) -> str:
+    config = get_config()
+    kc_enabled = config.auth.keycloak_admin.enabled
+    kc_button = ""
+    if kc_enabled:
+        kc_button = f"""
+          <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);text-align:center">
+            <a class="button" href="/auth/keycloak?next={escape(_safe_next_url(next_url))}" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none;width:100%;justify-content:center;padding:10px">
+              <svg width="20" height="20" viewBox="0 0 512 512" fill="none"><path d="M256 0C114.6 0 0 114.6 0 256s114.6 256 256 256 256-114.6 256-256S397.4 0 256 0z" fill="#4a86c8"/><path d="M340 180h-45l-39 60-39-60h-45l62 95-62 95h45l39-60 39 60h45l-62-95z" fill="white"/></svg>
+              Login with Keycloak
+            </a>
+          </div>
+        """
     body = f"""
       <section class="login">
         <h1>RAMPART Login</h1>
@@ -1825,6 +1940,7 @@ def _login_page(next_url: str, error: Optional[str]) -> str:
           <label>Username<input name="username" autocomplete="username" autofocus required></label>
           <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
           <div class="actions"><button class="button primary" type="submit">Log In</button></div>
+          {kc_button}
         </form>
       </section>
     """

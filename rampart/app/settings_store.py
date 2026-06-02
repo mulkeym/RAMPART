@@ -42,6 +42,13 @@ class RuntimeSettings(BaseModel):
     syslog_host: str = ""
     syslog_port: Optional[int] = None
     syslog_send_interval_seconds: Optional[int] = None
+    # Keycloak Admin Auth
+    keycloak_admin_enabled: Optional[bool] = None
+    keycloak_admin_base_url: str = ""
+    keycloak_admin_realm: str = ""
+    keycloak_admin_client_id: str = ""
+    keycloak_admin_client_secret: str = ""
+    keycloak_admin_verify_ssl: Optional[bool] = None
 
 
 def load_settings(path: str) -> RuntimeSettings:

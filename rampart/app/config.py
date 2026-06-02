@@ -31,6 +31,15 @@ class FailureResponseConfig(BaseModel):
     include_sanitized_request: bool = True
 
 
+class KeycloakAdminAuthConfig(BaseModel):
+    enabled: bool = False
+    base_url: str = ""
+    realm: str = ""
+    client_id: str = ""
+    client_secret: str = ""
+    verify_ssl: bool = True
+
+
 class AuthConfig(BaseModel):
     admin_username: str = "admin"
     admin_password: str = ""
@@ -44,6 +53,7 @@ class AuthConfig(BaseModel):
     mcp_enabled: bool = False
     mcp_admin_key: str = ""
     mcp_admin_write: bool = False
+    keycloak_admin: KeycloakAdminAuthConfig = Field(default_factory=KeycloakAdminAuthConfig)
 
 
 class ClientStoreConfig(BaseModel):
@@ -172,6 +182,12 @@ def _apply_env_overrides(config: AppConfig) -> None:
     auth.audit_log_path = os.getenv("RAMPART_AUDIT_LOG", auth.audit_log_path)
     auth.secure_cookies = _env_bool("RAMPART_SECURE_COOKIES", auth.secure_cookies)
     auth.mcp_admin_key = os.getenv("RAMPART_MCP_ADMIN_KEY", auth.mcp_admin_key)
+    kca = auth.keycloak_admin
+    kca.base_url = os.getenv("RAMPART_KC_ADMIN_BASE_URL", kca.base_url)
+    kca.realm = os.getenv("RAMPART_KC_ADMIN_REALM", kca.realm)
+    kca.client_id = os.getenv("RAMPART_KC_ADMIN_CLIENT_ID", kca.client_id)
+    kca.client_secret = os.getenv("RAMPART_KC_ADMIN_CLIENT_SECRET", kca.client_secret)
+    kca.verify_ssl = _env_bool("RAMPART_KC_ADMIN_VERIFY_SSL", kca.verify_ssl)
     tracking = config.tracking
     tracking.enabled = _env_bool("RAMPART_TRACKING_ENABLED", tracking.enabled)
     tracking.log_path = os.getenv("RAMPART_EVALUATION_LOG", tracking.log_path)
@@ -276,3 +292,15 @@ def _apply_local_settings(config: AppConfig) -> None:
         config.syslog.port = settings.syslog_port
     if settings.syslog_send_interval_seconds is not None:
         config.syslog.send_interval_seconds = settings.syslog_send_interval_seconds
+    if settings.keycloak_admin_enabled is not None:
+        config.auth.keycloak_admin.enabled = settings.keycloak_admin_enabled
+    if settings.keycloak_admin_base_url:
+        config.auth.keycloak_admin.base_url = settings.keycloak_admin_base_url
+    if settings.keycloak_admin_realm:
+        config.auth.keycloak_admin.realm = settings.keycloak_admin_realm
+    if settings.keycloak_admin_client_id:
+        config.auth.keycloak_admin.client_id = settings.keycloak_admin_client_id
+    if settings.keycloak_admin_client_secret:
+        config.auth.keycloak_admin.client_secret = settings.keycloak_admin_client_secret
+    if settings.keycloak_admin_verify_ssl is not None:
+        config.auth.keycloak_admin.verify_ssl = settings.keycloak_admin_verify_ssl
