@@ -1580,6 +1580,28 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
       <fieldset class="fieldset" style="margin-top:24px">
         <legend>Keycloak Admin Authentication</legend>
         <div class="hint">Enable SSO login for the admin UI via Keycloak OIDC. When enabled, a "Login with Keycloak" button appears on the login page alongside local password auth.</div>
+        <details style="margin:8px 0;font-size:12px;color:var(--text-secondary);background:var(--bg-secondary);padding:12px;border-radius:6px;border:1px solid var(--border)">
+          <summary style="cursor:pointer;font-weight:600;color:var(--text)">Keycloak Client Setup Guide</summary>
+          <div style="margin-top:10px;line-height:1.7">
+            <p>Create a client in your Keycloak realm with these settings:</p>
+            <table style="font-size:12px;margin:8px 0;border-collapse:collapse;width:100%">
+              <tr><td style="padding:4px 8px;border:1px solid var(--border);font-weight:600;white-space:nowrap">Client Type</td><td style="padding:4px 8px;border:1px solid var(--border)">OpenID Connect</td></tr>
+              <tr><td style="padding:4px 8px;border:1px solid var(--border);font-weight:600;white-space:nowrap">Client ID</td><td style="padding:4px 8px;border:1px solid var(--border)"><code>rampart-admin</code> (or your choice &mdash; enter it below)</td></tr>
+              <tr><td style="padding:4px 8px;border:1px solid var(--border);font-weight:600;white-space:nowrap">Client Authentication</td><td style="padding:4px 8px;border:1px solid var(--border)"><strong>ON</strong> (confidential client)</td></tr>
+              <tr><td style="padding:4px 8px;border:1px solid var(--border);font-weight:600;white-space:nowrap">Authentication Flow</td><td style="padding:4px 8px;border:1px solid var(--border)">Standard flow (Authorization Code) &mdash; check <strong>Standard flow</strong>, uncheck Direct access grants</td></tr>
+              <tr><td style="padding:4px 8px;border:1px solid var(--border);font-weight:600;white-space:nowrap">Valid Redirect URIs</td><td style="padding:4px 8px;border:1px solid var(--border)"><code>https://&lt;your-rampart-host&gt;/auth/keycloak/callback</code></td></tr>
+              <tr><td style="padding:4px 8px;border:1px solid var(--border);font-weight:600;white-space:nowrap">Web Origins</td><td style="padding:4px 8px;border:1px solid var(--border)"><code>https://&lt;your-rampart-host&gt;</code></td></tr>
+            </table>
+            <p>After creating the client:</p>
+            <ol style="margin:4px 0;padding-left:20px">
+              <li>Go to the <strong>Credentials</strong> tab and copy the <strong>Client Secret</strong></li>
+              <li>Enter the Base URL as your Keycloak server root (e.g. <code>https://keycloak.example.com</code>)</li>
+              <li>Enter the Realm name (e.g. <code>master</code> or your custom realm)</li>
+              <li>For self-signed certificates, uncheck <strong>Verify SSL</strong> below</li>
+            </ol>
+            <p style="margin-top:6px">RAMPART uses the <strong>Authorization Code</strong> flow with <code>openid email profile</code> scopes. The authenticated user's <code>preferred_username</code> is used as the admin session identity.</p>
+          </div>
+        </details>
         <form method="post" action="/ui/settings/keycloak-admin" style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
           <div>
             <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;color:var(--text-secondary)">Enabled <input type="checkbox" name="keycloak_admin_enabled" {"checked" if config.auth.keycloak_admin.enabled else ""} style="width:auto"></label>
