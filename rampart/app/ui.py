@@ -430,6 +430,27 @@ async def update_settings(request: Request) -> HTMLResponse:
     return RedirectResponse("/ui/settings?message=Settings+saved", status_code=303)
 
 
+@router.post("/ui/settings/password", response_class=HTMLResponse)
+async def settings_change_password(request: Request) -> HTMLResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    actor = read_session_user(request)
+    form = await _form_data(request)
+    current_password = form.get("current_password", "")
+    new_password = form.get("new_password", "")
+    confirm_password = form.get("confirm_password", "")
+    if new_password != confirm_password:
+        audit_event(request, "auth.password_change", actor=actor, result="failure", detail="confirmation mismatch")
+        return RedirectResponse("/ui/settings?message=Passwords+do+not+match", status_code=303)
+    error = change_password(actor, current_password, new_password, get_config().auth)
+    if error:
+        audit_event(request, "auth.password_change", actor=actor, result="failure", detail=error)
+        return RedirectResponse(f"/ui/settings?message={quote(error)}", status_code=303)
+    audit_event(request, "auth.password_change", actor=actor, result="success")
+    return RedirectResponse("/ui/settings?message=Password+changed", status_code=303)
+
+
 @router.get("/ui/settings/backup")
 async def download_backup(request: Request):
     redirect = require_ui_user(request)
@@ -1471,6 +1492,16 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
         </fieldset>
         <div class="actions"><button class="button primary" type="submit">Save Settings</button></div>
       </form>
+      <fieldset class="fieldset" style="margin-top:24px">
+        <legend>Admin Password</legend>
+        <div class="hint">Change the admin login password. Disabled when RAMPART_ADMIN_PASSWORD or RAMPART_ADMIN_PASSWORD_HASH environment variables are set.</div>
+        <form method="post" action="/ui/settings/password" style="margin-top:12px;display:flex;flex-direction:column;gap:10px;max-width:400px">
+          <label>Current Password<input type="password" name="current_password" required autocomplete="current-password"></label>
+          <label>New Password<input type="password" name="new_password" required autocomplete="new-password" minlength="8"></label>
+          <label>Confirm New Password<input type="password" name="confirm_password" required autocomplete="new-password" minlength="8"></label>
+          <div><button class="button primary" type="submit">Change Password</button></div>
+        </form>
+      </fieldset>
       <fieldset class="fieldset" style="margin-top:24px">
         <legend>Backup &amp; Restore</legend>
         <div class="hint">Download a snapshot of all RAMPART configuration, policies, and logs. Upload a previous backup to restore.</div>
