@@ -34,3 +34,11 @@ def audit_event(
         event["user_agent"] = request.headers.get("user-agent")
     with path.open("a", encoding="utf-8") as audit_log:
         audit_log.write(json.dumps(event, sort_keys=True) + "\n")
+    # Forward to syslog if enabled
+    try:
+        from rampart.app.syslog_forwarder import get_shared_sender, format_cef_audit
+        sender = get_shared_sender()
+        if sender:
+            sender.send(format_cef_audit(event))
+    except Exception:
+        pass  # syslog failure must not break audit logging

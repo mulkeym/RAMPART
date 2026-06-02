@@ -90,6 +90,86 @@ def _esc(value: str) -> str:
     return value.replace("\\", "\\\\").replace("|", "\\|").replace("=", "\\=").replace("\n", "\\n").replace("\r", "\\r")
 
 
+def format_cef_audit(event: dict) -> str:
+    """Format an audit event (admin action) as CEF."""
+    action = event.get("action", "unknown")
+    result = event.get("result", "unknown")
+    severity = 3 if result == "success" else 7
+    parts: list[str] = []
+    ts = event.get("timestamp", "")
+    if ts:
+        try:
+            dt = datetime.fromisoformat(ts)
+            parts.append(f"rt={int(dt.timestamp() * 1000)}")
+        except (ValueError, OSError):
+            parts.append(f"rt={_esc(ts)}")
+    if event.get("ip"):
+        parts.append(f"src={_esc(event['ip'])}")
+    if event.get("actor"):
+        parts.append(f"suser={_esc(event['actor'])}")
+    parts.append(f"act={_esc(action)}")
+    if event.get("target"):
+        parts.append(f"duser={_esc(event['target'])}")
+    parts.append(f"outcome={_esc(result)}")
+    if event.get("detail"):
+        parts.append(f"msg={_esc(str(event['detail'])[:1024])}")
+    return f"CEF:0|Engineering|RAMPART|{_VERSION}|audit|Admin Action|{severity}|{' '.join(parts)}"
+
+
+def format_cef_tracking(event: dict) -> str:
+    """Format an evaluation tracking event as CEF."""
+    decision = event.get("decision", "unknown")
+    violations = event.get("violations", [])
+    severity = 1
+    if decision == "fail":
+        severities = [v.get("severity", "medium") for v in violations]
+        highest = "medium"
+        for s in severities:
+            if _SEVERITY_MAP.get(s, 0) > _SEVERITY_MAP.get(highest, 0):
+                highest = s
+        severity = _SEVERITY_MAP.get(highest, 5)
+    parts: list[str] = []
+    ts = event.get("timestamp", "")
+    if ts:
+        try:
+            dt = datetime.fromisoformat(ts)
+            parts.append(f"rt={int(dt.timestamp() * 1000)}")
+        except (ValueError, OSError):
+            parts.append(f"rt={_esc(ts)}")
+    if event.get("client_id"):
+        parts.append(f"duser={_esc(event['client_id'])}")
+    if event.get("user"):
+        parts.append(f"suser={_esc(event['user'])}")
+    if event.get("customer"):
+        parts.append(f"cs1={_esc(event['customer'])}")
+        parts.append("cs1Label=customer")
+    parts.append(f"outcome={_esc(decision)}")
+    if violations:
+        v_json = json.dumps([{"id": v.get("policy_id"), "sev": v.get("severity")} for v in violations], separators=(",", ":"))
+        parts.append(f"cs2={_esc(v_json)}")
+        parts.append("cs2Label=violations")
+    policies = event.get("applied_policies", [])
+    if policies:
+        parts.append(f"cs3={_esc(','.join(policies))}")
+        parts.append("cs3Label=appliedPolicies")
+    return f"CEF:0|Engineering|RAMPART|{_VERSION}|eval-track|Evaluation Event|{severity}|{' '.join(parts)}"
+
+
+# Module-level sender for direct forwarding from audit/tracking writers
+_shared_sender: Optional["SyslogSender"] = None
+
+
+def get_shared_sender() -> Optional["SyslogSender"]:
+    """Return the shared sender if syslog is enabled, or None."""
+    return _shared_sender
+
+
+def init_shared_sender(host: str, port: int, protocol: str) -> None:
+    """Initialize the shared sender (called from main.py startup)."""
+    global _shared_sender
+    _shared_sender = SyslogSender(host, port, protocol)
+
+
 class SyslogSender:
     """Sends CEF messages over TCP or UDP."""
 

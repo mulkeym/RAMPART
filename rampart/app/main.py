@@ -80,9 +80,10 @@ async def _start_syslog_forwarder():
     config = get_config()
     if not config.syslog.enabled:
         return
-    from rampart.app.syslog_forwarder import SyslogSender, format_cef
+    from rampart.app.syslog_forwarder import SyslogSender, format_cef, init_shared_sender
     from rampart.app.prompt_log import get_entries_since
 
+    init_shared_sender(config.syslog.host, config.syslog.port, config.syslog.protocol)
     sender = SyslogSender(config.syslog.host, config.syslog.port, config.syslog.protocol)
     interval = config.syslog.send_interval_seconds
 

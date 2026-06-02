@@ -76,6 +76,14 @@ def write_evaluation_event(
 
     with path.open("a", encoding="utf-8") as event_log:
         event_log.write(json.dumps(event, sort_keys=True) + "\n")
+    # Forward to syslog if enabled
+    try:
+        from rampart.app.syslog_forwarder import get_shared_sender, format_cef_tracking
+        sender = get_shared_sender()
+        if sender:
+            sender.send(format_cef_tracking(event))
+    except Exception:
+        pass  # syslog failure must not break evaluation tracking
 
 
 def load_evaluation_events(path: str) -> list[dict[str, Any]]:
