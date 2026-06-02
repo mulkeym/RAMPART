@@ -76,6 +76,7 @@ async def keycloak_login(request: Request, next: str = "/ui/policies") -> Redire
         "response_type": "code",
         "scope": "openid email profile",
         "state": next,
+        "prompt": "login",
     })
     auth_url = f"{kc.base_url.rstrip('/')}/realms/{kc.realm}/protocol/openid-connect/auth?{params}"
     return RedirectResponse(auth_url, status_code=303)
