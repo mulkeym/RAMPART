@@ -1,282 +1,270 @@
 # RAMPART
 
-RAMPART is a prompt and tool-calling firewall for OpenAI-compatible API requests.
+**Request And Model Prompt Analysis & Routing Tool**
 
-`RAMPART` stands for **Request And Model Prompt Analysis & Routing Tool**.
+A prompt and tool-calling firewall for OpenAI-compatible API requests.
 
 ## Quick Start
-
-Pull and run from GitHub Container Registry:
 
 ```bash
 docker run -d -p 8080:8080 --name rampart ghcr.io/mulkeym/rampart:latest
 ```
 
-Open `http://localhost:8080` and log in with `admin` / `password123`.
+Open `http://localhost:8080` and log in with `admin` / `admin`.
 
-## Docker Deployment with Persistent Data
-
-Mount volumes to persist configuration, API keys, and logs across container restarts:
+## Docker Deployment
 
 ```bash
 mkdir -p /opt/rampart/{data,logs,policies}
 
-docker run -d -p 8080:8080 -p 8443:8443 --name rampart \
-  -v /opt/rampart/data:/app/data \
-  -v /opt/rampart/logs:/app/logs \
-  -v /opt/rampart/policies:/app/policies \
-  ghcr.io/mulkeym/rampart:latest
-```
-
-### Environment Variables in Docker
-
-Pass environment variables with `-e` flags. For production deployments, set a
-fixed session secret so sessions survive container restarts, and optionally
-pre-configure the admin password:
-
-```bash
 docker run -d -p 8080:8080 --name rampart \
   -v /opt/rampart/data:/app/data \
   -v /opt/rampart/logs:/app/logs \
   -v /opt/rampart/policies:/app/policies \
+  -e RAMPART_ADMIN_PASSWORD=changeme \
   -e RAMPART_SESSION_SECRET='replace-with-a-long-random-secret' \
-  -e RAMPART_ADMIN_PASSWORD_HASH='pbkdf2_sha256$...' \
   ghcr.io/mulkeym/rampart:latest
 ```
 
-> **Note:** If `RAMPART_SESSION_SECRET` is not set, the entrypoint auto-generates
-> a random secret at container startup. This is sufficient for normal use but the
-> secret will change on every restart, invalidating active sessions. For a stable
-> deployment, set it explicitly.
-
-| Port | Service | Purpose |
-|------|---------|---------|
-| `8080` | Main app (HTTP) | UI, API, playground, MCP, extension download |
-| `8443` | Identity server (HTTPS/mTLS) | CAC-based extension enrollment (optional, requires certs in `data/certs/`) |
+| Port | Service |
+|------|---------|
+| `8080` | Main app (UI, API, playground, MCP, extension) |
+| `8443` | mTLS identity server (optional, CAC enrollment) |
 
 | Volume | Contents |
 |--------|----------|
-| `data/` | Admin credentials, API key store, runtime settings, groups, mTLS certs |
-| `logs/` | Audit trail, violation/evaluation events |
-| `policies/` | Policy YAML file |
+| `data/` | Credentials, API keys, groups, settings, group mappings |
+| `logs/` | Audit trail, evaluation events |
+| `policies/` | Policy YAML definitions |
 
 ## Docker Compose
+
+```yaml
+services:
+  rampart:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - rampart-data:/app/data
+      - rampart-logs:/app/logs
+      - ./policies:/app/policies
+    environment:
+      - RAMPART_ADMIN_PASSWORD=changeme
+      - RAMPART_SESSION_SECRET=replace-with-a-long-random-secret
+    restart: unless-stopped
+
+volumes:
+  rampart-data:
+  rampart-logs:
+```
 
 ```bash
 docker compose up -d
 ```
 
-Override settings with environment variables in a `.env` file or directly in
-`docker-compose.yml`.
-
-## Run without Docker
+## Run Without Docker
 
 ```bash
 pip install .
 uvicorn rampart.app.main:app --host 0.0.0.0 --port 8080
 ```
 
-For development with auto-reload:
+## Authentication
+
+RAMPART supports three authentication methods. They can be used simultaneously.
+
+### Local Password (Default)
+
+Default credentials: `admin` / `admin`
+
+Set a custom password via environment variable:
 
 ```bash
-python3 -m uvicorn rampart.app.main:app --reload --host 0.0.0.0 --port 8080
+RAMPART_ADMIN_PASSWORD=yourpassword
 ```
 
-## Local Admin Auth
-
-By default, local auth seeds an initial admin account on first startup:
-
-```text
-username: admin
-password: password123
-```
-
-The first login redirects to `/change-password` and requires a new password before
-policy management is available. The updated local credential hash is stored in
-`data/auth.json`.
-
-For environment-managed credentials instead, generate a password hash:
+Or use a pre-hashed password for security-hardened deployments:
 
 ```bash
-python3 scripts/hash_password.py
+RAMPART_ADMIN_PASSWORD_HASH='pbkdf2_sha256$...'
 ```
 
-Set local auth environment variables before starting the service:
+Password can also be changed in the admin UI under Settings > Admin Password (when env vars are not set).
+
+**Priority:** `RAMPART_ADMIN_PASSWORD` > `RAMPART_ADMIN_PASSWORD_HASH` > `data/auth.json` > default `admin/admin`
+
+### Keycloak SSO (OIDC)
+
+Enable Keycloak OIDC login for the admin UI. When enabled, a "Login with Keycloak" button appears on the login page alongside local password auth.
+
+Configure in the admin UI under Settings > Keycloak Admin Authentication, or via environment variables:
 
 ```bash
-export RAMPART_ADMIN_USERNAME=admin
-export RAMPART_ADMIN_PASSWORD_HASH='pbkdf2_sha256$...'
-export RAMPART_SESSION_SECRET='replace-with-a-long-random-secret'
+RAMPART_KC_ADMIN_BASE_URL=https://keycloak.example.com
+RAMPART_KC_ADMIN_REALM=dha
+RAMPART_KC_ADMIN_CLIENT_ID=rampart-admin
+RAMPART_KC_ADMIN_CLIENT_SECRET=your-client-secret
+RAMPART_KC_ADMIN_VERIFY_SSL=false  # for self-signed certs
 ```
 
-When `RAMPART_ADMIN_PASSWORD_HASH` is set, password changes through the GUI are
-disabled because the password is owned by the environment.
+**Keycloak client setup:**
+- Client Type: OpenID Connect
+- Client Authentication: ON (confidential)
+- Authentication Flow: Standard flow (Authorization Code)
+- Valid Redirect URIs: `https://<rampart-host>/auth/keycloak/callback`
+- Scopes: `openid email profile`
+
+The admin UI Settings page includes a detailed setup guide.
+
+### CAC/mTLS Identity (Extension Enrollment)
+
+For DoD/Gov environments with CAC/PIV smart cards. Used during browser extension enrollment, not admin UI login. Requires certificates in `data/certs/` and port 8443.
 
 ## Default Policies
 
-RAMPART ships with 9 default policies covering the OWASP Top 10 for LLM Applications
-and industry best practices:
+RAMPART ships with policies covering the OWASP Top 10 for LLM Applications:
 
 | Policy | Severity | Action | Coverage |
 |--------|----------|--------|----------|
-| `no-credential-disclosure` | high | block | OWASP LLM06 — Sensitive Information Disclosure |
-| `no-system-prompt-exfiltration` | high | block | OWASP LLM01 — Prompt Injection |
-| `tool-allowlist` | medium | block | OWASP LLM07 — Insecure Plugin Design |
-| `max-message-size` | medium | block | OWASP LLM04 — Model Denial of Service |
+| `no-credential-disclosure` | high | block | OWASP LLM06 - Sensitive Information Disclosure |
+| `no-system-prompt-exfiltration` | high | block | OWASP LLM01 - Prompt Injection |
+| `tool-allowlist` | medium | block | OWASP LLM07 - Insecure Plugin Design |
+| `max-message-size` | medium | block | OWASP LLM04 - Model Denial of Service |
 | `No-PII-Data` | high | block | OWASP LLM06 / GDPR / HIPAA |
-| `prompt-injection-defense` | critical | block | OWASP LLM01 — Prompt Injection |
+| `prompt-injection-defense` | critical | block | OWASP LLM01 - Prompt Injection |
 | `harmful-content` | high | block | NIST AI RMF / EU AI Act |
-| `insecure-output` | high | block | OWASP LLM02 — Insecure Output Handling |
-| `excessive-agency` | medium | warn | OWASP LLM08 — Excessive Agency |
+| `insecure-output` | high | block | OWASP LLM02 - Insecure Output Handling |
+| `excessive-agency` | medium | warn | OWASP LLM08 - Excessive Agency |
 
-Policies use a combination of deterministic checks (regex, tool allowlists, size limits)
-and context-aware LLM evaluation. Add, edit, or disable policies through the admin UI
-or MCP tools.
+Policies use deterministic checks (regex, tool allowlists, size limits) and context-aware LLM evaluation. Manage through the admin UI or MCP tools.
+
+## User Identity and Group-Based Policies
+
+RAMPART can evaluate prompts differently based on who the user is, using an external identity provider (Keycloak, with future support for PingFederate and AD/LDAP).
+
+**How it works:**
+1. The `user` field in the OpenAI request (e.g. `"user": "jsmith@dha.mil"`) identifies the end user
+2. RAMPART looks up the user's groups in the identity provider (cached with configurable TTL)
+3. External groups are mapped to RAMPART groups via the Group Mappings admin page
+4. The union of all matched groups' policies is used for evaluation
+
+**Policy resolution precedence:**
+1. User group resolution (if enabled and matches) - replaces API key baseline
+2. Client's assigned group policies
+3. Client's directly assigned policies
+4. All enabled policies (fallback)
+
+Configure in Settings > User Group Resolver. Manage mappings at `/ui/group-mappings`.
+
+## Prompt Log and Syslog
+
+All prompt evaluations are logged to an in-memory ring buffer (10,000 entries) viewable at `/ui/prompt-log`. Each entry includes:
+- Full prompt content, user identity, client ID
+- Resolved external groups and mapped RAMPART groups
+- Per-policy pass/fail results with violation messages
+- Source (api, gateway, playground), timing
+
+### Syslog / Splunk Forwarding
+
+Enable CEF syslog forwarding in Settings > Syslog Forwarder. Three event types:
+
+| Event | CEF ID | Description |
+|-------|--------|-------------|
+| Prompt Evaluation | `prompt-eval` | Full prompt evaluation with policies (polled) |
+| Admin Audit | `audit` | Login, settings changes, CRUD actions (immediate) |
+| Evaluation Tracking | `eval-track` | Decision and violations per request (immediate) |
+
+```bash
+RAMPART_SYSLOG_ENABLED=true
+RAMPART_SYSLOG_HOST=splunk.example.com
+RAMPART_SYSLOG_PORT=514
+RAMPART_SYSLOG_PROTOCOL=udp  # or tcp
+```
 
 ## Gateway Mode
 
-`/v1/chat/completions` behaves like an OpenAI-compatible gateway:
+`/v1/chat/completions` - OpenAI-compatible gateway. Accepted requests are forwarded to the upstream LLM. Blocking violations return an OpenAI-compatible error.
 
-- Accepted requests are forwarded to the upstream LLM
-- Blocking policy violations return an OpenAI-compatible error
-- Warn-only violations are forwarded using the sanitized request
-- Per-client token usage is tracked (prompt/completion/total)
-
-`/v1/rampart/evaluate` returns a RAMPART decision document without proxying.
+`/v1/rampart/evaluate` - Returns a RAMPART decision document without proxying.
 
 ## API Keys and Clients
 
-Create customer/app API keys in the admin UI at `/ui/clients`. Each client can have:
-
-- Assigned policies (subset of enabled policies)
-- Custom upstream LLM endpoint override
-- Token usage tracking (prompt, completion, total requests)
-
-Use a generated key with the `Authorization` header:
+Create API keys in the admin UI at `/ui/clients`. Each client can be assigned to a group (inherits group policies) or have directly assigned policies. Custom upstream LLM overrides per client.
 
 ```bash
-curl -s http://localhost:8080/v1/chat/completions \
+curl http://localhost:8080/v1/rampart/evaluate \
   -H "Authorization: Bearer rmp_live_..." \
-  -H "content-type: application/json" \
-  -d '{"model":"gpt-4","messages":[{"role":"user","content":"Hello"}]}'
+  -H "Content-Type: application/json" \
+  -d '{"request":{"model":"gpt-4","messages":[{"role":"user","content":"Hello"}],"user":"jsmith@example.com"}}'
 ```
 
 ## Playground
 
-The interactive playground at `/ui/playground` lets you:
+The interactive playground at `/ui/playground` supports three test scenarios:
 
-- Compose multimodal messages (text + paste images directly)
-- Select policies or create ad-hoc rules
-- See per-policy pass/fail results with violation details
-- View the sanitized request
-- Optionally send to the upstream LLM and see the response
+- **Prompt Evaluation** - Compose messages with images, set user identity
+- **Tool Call Test** - Test tool names against allowlist/denylist policies
+- **Raw JSON** - Edit a complete OpenAI request with pre-populated template
 
-Policy results display immediately while the LLM response loads asynchronously.
+Select a client from the "Test as Client" dropdown to evaluate using that client's exact policy set.
 
-## Chrome Extension
+## Browser Extension
 
-RAMPART includes a Chrome browser extension that intercepts prompts on AI chat
-sites before they're sent, evaluates them against policies, and blocks violations.
+Chrome and Firefox extension that intercepts prompts on AI chat sites, evaluates them against policies, and blocks violations.
 
-**Supported sites:** ChatGPT (chatgpt.com), Ask Sage (chat.asksage.ai)
+**Supported sites:** ChatGPT, Claude, Gemini, Ask Sage
 
-**Features:**
-- Text and image evaluation (pasted images are captured and sent to RAMPART)
-- Policy violation overlay blocks the prompt and requires user acknowledgment
-- Auto-updating — `content.js` and `styles.css` load from the RAMPART server
-- Group-based enrollment with optional CAC/mTLS identity
+Setup: `/ui/extension` > Download Extension > Load in browser > Enroll with group key or API key.
 
-### Setup
+## MCP Server
 
-1. Go to `/ui/extension` in the RAMPART admin UI
-2. Click **Download Extension (.zip)** — the server URL is pre-configured
-3. Unzip and load in Chrome: `chrome://extensions` → Developer mode → Load unpacked
-4. Click the RAMPART icon in the toolbar to enroll
+Tools for LLM-driven administration via JSON-RPC (`POST /mcp`) or REST (`POST /v1/tools/{tool_name}`).
 
-### Enrollment
+Enable in Settings > MCP Server. Available tools: policy CRUD, client CRUD, group CRUD, group mapping CRUD, prompt evaluation, violation monitoring.
 
-**Group enrollment (recommended):**
-1. Admin creates a group in `/ui/groups` with assigned policies
-2. Admin shares the group enrollment key with users
-3. User enters the server URL and group key in the extension popup → clicks Enroll
-4. Extension auto-provisions an API key with the group's policies
+## Backup and Restore
 
-**Manual setup:**
-1. Admin creates an API key in `/ui/clients`
-2. User enters the server URL and API key in the extension Settings
+Download a complete backup of all configs, policies, and logs from Settings > Backup & Restore. Upload a previous backup to restore. Both actions are audit logged.
 
-### CAC-Based Identity (Optional)
-
-For environments with CAC/PIV smart cards, RAMPART can verify user identity
-via mTLS during enrollment:
-
-1. Place server cert and CA cert in `data/certs/` (see `scripts/generate_test_certs.sh`)
-2. Expose port 8443 in Docker
-3. During enrollment, the extension calls the identity server on port 8443
-4. The browser prompts for a client certificate
-5. The SAN from the certificate becomes the client ID
-
-If no certificates are configured, enrollment falls back to Chrome profile
-identity or manual email entry.
-
-## Vision Evaluator
-
-RAMPART can evaluate image content against policies using a separate vision-capable
-LLM. Configure the vision evaluator in Settings with its own endpoint and model.
-When enabled, each image in a request is evaluated individually against applicable
-LLM policies. Add `skip_vision: true` to any check to opt it out of image evaluation.
-
-## MCP Server and Tool API
-
-RAMPART exposes tools for LLM-driven administration via two interfaces:
-
-**MCP (JSON-RPC):** `POST /mcp` — for MCP-compatible clients.
-
-**REST Tool API:** `POST /v1/tools/{tool_name}` — individual endpoints per tool,
-auto-discovered via OpenAPI at `/openapi.json`. Compatible with llama.cpp and other
-OpenAI-compatible tool servers.
-
-Enable in Settings:
-1. Check **Enabled** under MCP Server
-2. Generate an **Admin Key**
-3. Optionally enable **Admin Write Access** for create/update/delete operations
-
-### Available Tools
-
-| Category | Tools |
-|----------|-------|
-| Policy Management | `list_policies`, `get_policy`, `create_policy`, `update_policy`, `delete_policy` |
-| Client Management | `list_clients`, `get_client`, `create_client`, `update_client`, `delete_client`, `toggle_client`, `rotate_client_key` |
-| Policy Assignment | `assign_policies` |
-| Evaluation | `evaluate_prompt` |
-| Monitoring | `get_violations` |
-
-## Configuration
-
-The service loads `policies/default.yaml` unless `RAMPART_POLICY_FILE` is set.
-Runtime settings can be changed in the admin UI at `/ui/settings` and are persisted
-to `data/settings.json`.
-
-### Environment Variables
+## Environment Variables
 
 | Variable | Purpose |
 |----------|---------|
-| `RAMPART_TLS_VERIFY` | Set to `false` to disable TLS certificate verification (for self-signed certs) |
-| `RAMPART_POLICY_FILE` | Path to policy YAML file |
+| **Auth** | |
+| `RAMPART_ADMIN_PASSWORD` | Admin password (plaintext, simplest) |
+| `RAMPART_ADMIN_PASSWORD_HASH` | Admin password hash (pre-hashed) |
 | `RAMPART_ADMIN_USERNAME` | Admin username (default: `admin`) |
-| `RAMPART_ADMIN_PASSWORD_HASH` | Admin password hash (disables UI password changes) |
 | `RAMPART_SESSION_SECRET` | Session signing secret (auto-generated if not set) |
-| `RAMPART_AUDIT_LOG` | Audit log path |
-| `RAMPART_MCP_ADMIN_KEY` | MCP admin API key |
-| `RAMPART_UPSTREAM_ENABLED` | Enable/disable upstream LLM proxying |
+| **Keycloak Admin Auth** | |
+| `RAMPART_KC_ADMIN_BASE_URL` | Keycloak server URL |
+| `RAMPART_KC_ADMIN_REALM` | Keycloak realm |
+| `RAMPART_KC_ADMIN_CLIENT_ID` | OIDC client ID |
+| `RAMPART_KC_ADMIN_CLIENT_SECRET` | OIDC client secret |
+| `RAMPART_KC_ADMIN_VERIFY_SSL` | SSL verification (default: `true`) |
+| **User Group Resolver** | |
+| `RAMPART_KEYCLOAK_BASE_URL` | Keycloak URL for user group lookup |
+| `RAMPART_KEYCLOAK_REALM` | Keycloak realm for user groups |
+| `RAMPART_KEYCLOAK_CLIENT_ID` | Service account client ID |
+| `RAMPART_KEYCLOAK_CLIENT_SECRET` | Service account client secret |
+| **Upstream LLM** | |
+| `RAMPART_UPSTREAM_ENABLED` | Enable/disable upstream proxying |
 | `RAMPART_UPSTREAM_BASE_URL` | Upstream LLM API base URL |
 | `RAMPART_UPSTREAM_MODEL` | Override upstream model name |
 | `RAMPART_UPSTREAM_API_KEY` | Upstream LLM API key |
+| **LLM Evaluators** | |
 | `RAMPART_LLM_EVALUATOR_BASE_URL` | Context analysis LLM endpoint |
 | `RAMPART_LLM_EVALUATOR_MODEL` | Context analysis model name |
-| `RAMPART_VISION_EVALUATOR_BASE_URL` | Vision evaluator LLM endpoint |
+| `RAMPART_VISION_EVALUATOR_BASE_URL` | Vision evaluator endpoint |
 | `RAMPART_VISION_EVALUATOR_MODEL` | Vision evaluator model name |
-| `RAMPART_TRACKING_ENABLED` | Enable/disable violation tracking |
+| **Syslog** | |
+| `RAMPART_SYSLOG_ENABLED` | Enable syslog forwarding |
+| `RAMPART_SYSLOG_HOST` | Syslog server host |
+| `RAMPART_SYSLOG_PORT` | Syslog server port |
+| `RAMPART_SYSLOG_PROTOCOL` | `udp` or `tcp` |
+| **Other** | |
+| `RAMPART_TLS_VERIFY` | Disable TLS verification (`false`) |
+| `RAMPART_POLICY_FILE` | Path to policy YAML |
+| `RAMPART_TRACKING_ENABLED` | Enable/disable evaluation tracking |
 | `RAMPART_EVALUATION_LOG` | Evaluation log path |
-| `RAMPART_CLIENT_STORE` | Client store JSON path |
-| `RAMPART_SETTINGS_FILE` | Runtime settings JSON path |
+| `RAMPART_AUDIT_LOG` | Audit log path |

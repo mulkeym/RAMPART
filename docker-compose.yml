@@ -3,20 +3,37 @@ services:
     build: .
     ports:
       - "8080:8080"
-      - "8443:8443"
+      # - "8443:8443"  # Uncomment for mTLS identity server
     volumes:
       - rampart-data:/app/data
       - rampart-logs:/app/logs
       - ./policies:/app/policies
     environment:
+      - RAMPART_ADMIN_PASSWORD=${RAMPART_ADMIN_PASSWORD:-admin}
       - RAMPART_SESSION_SECRET=${RAMPART_SESSION_SECRET:-change-me-in-production}
-      - RAMPART_ADMIN_USERNAME=${RAMPART_ADMIN_USERNAME:-admin}
-      # - RAMPART_ADMIN_PASSWORD_HASH=
-      # - RAMPART_MCP_ADMIN_KEY=
-      # - RAMPART_TLS_VERIFY=false
+      # Keycloak admin SSO (optional)
+      # - RAMPART_KC_ADMIN_BASE_URL=https://keycloak.example.com
+      # - RAMPART_KC_ADMIN_REALM=master
+      # - RAMPART_KC_ADMIN_CLIENT_ID=rampart-admin
+      # - RAMPART_KC_ADMIN_CLIENT_SECRET=
+      # - RAMPART_KC_ADMIN_VERIFY_SSL=false
+      # User group resolver (optional)
+      # - RAMPART_KEYCLOAK_BASE_URL=https://keycloak.example.com
+      # - RAMPART_KEYCLOAK_REALM=master
+      # - RAMPART_KEYCLOAK_CLIENT_ID=rampart-service
+      # - RAMPART_KEYCLOAK_CLIENT_SECRET=
+      # Upstream LLM
       # - RAMPART_UPSTREAM_BASE_URL=http://192.168.1.181:8000/v1
+      # - RAMPART_UPSTREAM_API_KEY=
+      # LLM evaluators
       # - RAMPART_LLM_EVALUATOR_BASE_URL=http://192.168.1.181:8080/v1
       # - RAMPART_VISION_EVALUATOR_BASE_URL=http://192.168.1.181:8081/v1
+      # Syslog forwarding (optional)
+      # - RAMPART_SYSLOG_ENABLED=true
+      # - RAMPART_SYSLOG_HOST=splunk.example.com
+      # - RAMPART_SYSLOG_PORT=514
+      # - RAMPART_SYSLOG_PROTOCOL=udp
+      # - RAMPART_TLS_VERIFY=false
     restart: unless-stopped
 
 volumes:
