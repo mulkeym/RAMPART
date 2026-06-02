@@ -993,6 +993,31 @@ async def create_group_mapping_route(request: Request) -> HTMLResponse:
     return RedirectResponse("/ui/group-mappings?message=Mapping+created", status_code=303)
 
 
+@router.get("/ui/group-mappings/fetch-keycloak-groups")
+async def fetch_keycloak_groups(request: Request):
+    from fastapi.responses import JSONResponse
+    if not read_session_user(request):
+        return JSONResponse({"error": "Unauthorized — please log in"}, status_code=401)
+    config = get_config()
+    resolver_cfg = config.user_group_resolver
+    if not resolver_cfg.enabled or resolver_cfg.provider != "keycloak":
+        return JSONResponse({"error": "User Group Resolver is not enabled or not using Keycloak. Configure it in Settings."})
+    kc = resolver_cfg.keycloak
+    if not kc.base_url or not kc.realm or not kc.client_id or not kc.client_secret:
+        return JSONResponse({"error": "Keycloak connection not fully configured in Settings > User Group Resolver. Need base URL, realm, client ID, and client secret (confidential client with service account)."})
+    try:
+        from rampart.app.group_providers.keycloak import KeycloakGroupProvider
+        provider = KeycloakGroupProvider(
+            base_url=kc.base_url, realm=kc.realm,
+            client_id=kc.client_id, client_secret=kc.client_secret,
+            verify_ssl=kc.verify_ssl,
+        )
+        groups = await provider.list_realm_groups()
+        return JSONResponse({"groups": groups})
+    except Exception as exc:
+        return JSONResponse({"error": f"Failed to fetch groups from Keycloak: {str(exc)[:200]}"})
+
+
 @router.get("/ui/group-mappings/{mapping_id}", response_class=HTMLResponse)
 async def edit_group_mapping(mapping_id: str, request: Request) -> HTMLResponse:
     redirect = require_ui_user(request)
@@ -1030,31 +1055,6 @@ async def delete_group_mapping_route(mapping_id: str, request: Request) -> Redir
     except ValueError:
         pass
     return RedirectResponse("/ui/group-mappings?message=Mapping+deleted", status_code=303)
-
-
-@router.get("/ui/group-mappings/fetch-keycloak-groups")
-async def fetch_keycloak_groups(request: Request):
-    from fastapi.responses import JSONResponse
-    if not read_session_user(request):
-        return JSONResponse({"error": "Unauthorized — please log in"}, status_code=401)
-    config = get_config()
-    resolver_cfg = config.user_group_resolver
-    if not resolver_cfg.enabled or resolver_cfg.provider != "keycloak":
-        return JSONResponse({"error": "User Group Resolver is not enabled or not using Keycloak. Configure it in Settings."})
-    kc = resolver_cfg.keycloak
-    if not kc.base_url or not kc.realm or not kc.client_id or not kc.client_secret:
-        return JSONResponse({"error": "Keycloak connection not fully configured in Settings > User Group Resolver. Need base URL, realm, client ID, and client secret (confidential client with service account)."})
-    try:
-        from rampart.app.group_providers.keycloak import KeycloakGroupProvider
-        provider = KeycloakGroupProvider(
-            base_url=kc.base_url, realm=kc.realm,
-            client_id=kc.client_id, client_secret=kc.client_secret,
-            verify_ssl=kc.verify_ssl,
-        )
-        groups = await provider.list_realm_groups()
-        return JSONResponse({"groups": groups})
-    except Exception as exc:
-        return JSONResponse({"error": f"Failed to fetch groups from Keycloak: {str(exc)[:200]}"})
 
 
 def _group_mapping_form(mapping: Optional[GroupMapping], title: str, action_url: str, error: Optional[str] = None, actor: Optional[str] = None) -> str:
