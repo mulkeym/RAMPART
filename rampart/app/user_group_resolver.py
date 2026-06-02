@@ -17,6 +17,22 @@ class UserGroupResolver:
         self._cache: dict[str, dict[str, Any]] = {}
         self._dirty = False
 
+    def check_cache(self, user_id: str) -> Optional[dict[str, Any]]:
+        """Check cache without triggering a lookup. Returns dict with
+        'groups', 'fetched_at', 'ttl_remaining', 'expired' or None if not cached."""
+        entry = self._cache.get(user_id)
+        if entry is None:
+            return None
+        age = time() - entry["fetched_at"]
+        remaining = self.cache_ttl_seconds - age
+        return {
+            "groups": entry["groups"],
+            "fetched_at": entry["fetched_at"],
+            "age_seconds": int(age),
+            "ttl_remaining": int(max(0, remaining)),
+            "expired": remaining <= 0,
+        }
+
     async def resolve(self, user_id: str) -> list[str]:
         entry = self._cache.get(user_id)
         if entry is not None and (time() - entry["fetched_at"]) < self.cache_ttl_seconds:
