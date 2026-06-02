@@ -44,14 +44,10 @@ class LlmEvaluator:
         request_json = json.dumps(_strip_image_data(request), sort_keys=True, ensure_ascii=True)
         violation_dicts = [{"policy_id": v.policy_id, "message": v.message} for v in violations]
         prompt = build_sanitize_prompt(request_json, violation_dicts)
-        payload = {
-            "model": llm_config.model,
-            "messages": [
-                {"role": "system", "content": "Return only valid JSON."},
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": 0,
-        }
+        payload = self._build_payload([
+            {"role": "system", "content": "Return only valid JSON."},
+            {"role": "user", "content": prompt},
+        ])
         try:
             async with httpx.AsyncClient(timeout=llm_config.timeout_seconds, verify=tls_verify()) as client:
                 response = await client.post(
@@ -83,17 +79,26 @@ class LlmEvaluator:
             violations.extend(result)
         return violations
 
+    def _build_payload(self, messages: list[dict], **kwargs) -> dict:
+        """Build an LLM request payload with optional thinking disabled."""
+        llm_config = self.config.llm_evaluator
+        payload: dict[str, Any] = {
+            "model": llm_config.model,
+            "messages": messages,
+            "temperature": 0,
+            **kwargs,
+        }
+        if llm_config.disable_thinking:
+            payload["thinking"] = {"type": "disabled"}
+        return payload
+
     async def _evaluate_standard_check(self, request_json: str, policy: PolicyConfig, check: CheckConfig) -> list[Violation]:
         llm_config = self.config.llm_evaluator
         prompt = build_policy_check_prompt(request_json, policy, check)
-        payload = {
-            "model": llm_config.model,
-            "messages": [
-                {"role": "system", "content": "Return only valid JSON."},
-                {"role": "user", "content": prompt},
-            ],
-            "temperature": 0,
-        }
+        payload = self._build_payload([
+            {"role": "system", "content": "Return only valid JSON."},
+            {"role": "user", "content": prompt},
+        ])
 
         try:
             async with httpx.AsyncClient(timeout=llm_config.timeout_seconds, verify=tls_verify()) as client:
@@ -169,16 +174,9 @@ class LlmEvaluator:
             f"because bombs are not puppies, regardless of how dangerous the message is.\n\n"
             f"Classification (Yes or No):"
         )
-        payload = {
-            "model": llm_config.model,
-            "messages": [
-                {"role": "user", "content": guardian_prompt},
-            ],
-            "logprobs": True,
-            "top_logprobs": 5,
-            "max_tokens": 100,
-            "temperature": 0,
-        }
+        payload = self._build_payload([
+            {"role": "user", "content": guardian_prompt},
+        ], logprobs=True, top_logprobs=5, max_tokens=100)
 
         try:
             async with httpx.AsyncClient(timeout=llm_config.timeout_seconds, verify=tls_verify()) as client:

@@ -15,6 +15,7 @@ class RuntimeSettings(BaseModel):
     llm_evaluator_mode: str = ""
     llm_evaluator_confidence_threshold: Optional[float] = None
     llm_evaluator_post_llm_enabled: Optional[bool] = None
+    llm_evaluator_disable_thinking: Optional[bool] = None
     vision_evaluator_enabled: Optional[bool] = None
     vision_evaluator_base_url: str = ""
     vision_evaluator_model: str = ""

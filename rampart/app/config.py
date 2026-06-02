@@ -17,6 +17,7 @@ class LlmEvaluatorConfig(BaseModel):
     mode: str = "standard"
     confidence_threshold: float = 0.75
     post_llm_enabled: bool = False
+    disable_thinking: bool = False
 
 
 class VisionEvaluatorConfig(BaseModel):
@@ -247,6 +248,8 @@ def _apply_local_settings(config: AppConfig) -> None:
         config.llm_evaluator.confidence_threshold = settings.llm_evaluator_confidence_threshold
     if settings.llm_evaluator_post_llm_enabled is not None:
         config.llm_evaluator.post_llm_enabled = settings.llm_evaluator_post_llm_enabled
+    if settings.llm_evaluator_disable_thinking is not None:
+        config.llm_evaluator.disable_thinking = settings.llm_evaluator_disable_thinking
     if settings.upstream_enabled is not None:
         config.upstream.enabled = settings.upstream_enabled
     if settings.upstream_base_url:
