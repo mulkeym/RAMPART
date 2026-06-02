@@ -43,6 +43,8 @@ class RuntimeSettings(BaseModel):
     syslog_host: str = ""
     syslog_port: Optional[int] = None
     syslog_send_interval_seconds: Optional[int] = None
+    # Local Admin Auth
+    local_auth_enabled: Optional[bool] = None
     # Keycloak Admin Auth
     keycloak_admin_enabled: Optional[bool] = None
     keycloak_admin_base_url: str = ""

@@ -52,6 +52,9 @@ async def login(request: Request) -> HTMLResponse:
     username = form.get("username", "")
     password = form.get("password", "")
     next_url = _safe_next_url(form.get("next", "/ui/policies"))
+    if not get_config().auth.local_auth_enabled:
+        audit_event(request, "auth.login", actor=username or None, result="failure", detail="local auth disabled")
+        return HTMLResponse(_login_page(next_url, "Local authentication is disabled. Use Keycloak SSO."), status_code=403)
     if not username or not password:
         audit_event(request, "auth.login", actor=username or None, result="failure", detail="missing credentials")
         return HTMLResponse(_login_page(next_url, "Username and password are required."), status_code=401)
@@ -504,6 +507,21 @@ async def update_settings(request: Request) -> HTMLResponse:
     save_settings(settings, config.settings.path)
     audit_event(request, "settings.update", actor=actor, result="success")
     return RedirectResponse("/ui/settings?message=Settings+saved", status_code=303)
+
+
+@router.post("/ui/settings/local-auth", response_class=HTMLResponse)
+async def save_local_auth_settings(request: Request) -> HTMLResponse:
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    actor = read_session_user(request)
+    config = get_config()
+    form = await _form_data(request)
+    settings = load_settings(config.settings.path)
+    settings.local_auth_enabled = form.get("local_auth_enabled") == "on"
+    save_settings(settings, config.settings.path)
+    audit_event(request, "settings.local_auth", actor=actor, result="success", detail=f"enabled={settings.local_auth_enabled}")
+    return RedirectResponse("/ui/settings?message=Local+auth+settings+saved", status_code=303)
 
 
 @router.post("/ui/settings/keycloak-admin", response_class=HTMLResponse)
@@ -1701,6 +1719,17 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
         </form>
       </fieldset>
       <fieldset class="fieldset" style="margin-top:24px">
+        <legend>Local Admin Authentication</legend>
+        <div class="hint">Enable or disable password-based admin login. When disabled, only Keycloak SSO can be used to access the admin UI.</div>
+        <form method="post" action="/ui/settings/local-auth" style="margin-top:8px;display:flex;align-items:center;gap:12px">
+          <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;color:var(--text-secondary);margin:0">
+            Enabled <input type="checkbox" name="local_auth_enabled" {"checked" if config.auth.local_auth_enabled else ""} style="width:auto">
+          </label>
+          <button class="button small" type="submit">Save</button>
+          {"<span class='muted' style='font-size:12px'>&#9888; Make sure Keycloak SSO is working before disabling local auth!</span>" if config.auth.local_auth_enabled else "<span style='font-size:12px;color:var(--warning)'>&#9888; Local auth is disabled. Only Keycloak SSO users can log in.</span>"}
+        </form>
+      </fieldset>
+      <fieldset class="fieldset" style="margin-top:24px">
         <legend>Admin Password</legend>
         <div class="hint">Change the admin login password. Disabled when RAMPART_ADMIN_PASSWORD or RAMPART_ADMIN_PASSWORD_HASH environment variables are set.</div>
         <form method="post" action="/ui/settings/password" style="margin-top:12px;display:flex;flex-direction:column;gap:10px;max-width:400px">
@@ -2025,27 +2054,37 @@ def _safe_next_url(value: str) -> str:
 
 def _login_page(next_url: str, error: Optional[str]) -> str:
     config = get_config()
+    local_enabled = config.auth.local_auth_enabled
     kc_enabled = config.auth.keycloak_admin.enabled
+    safe_next = escape(_safe_next_url(next_url))
+    local_form = ""
+    if local_enabled:
+        local_form = f"""
+        <form class="panel form" method="post" action="/login">
+          <input type="hidden" name="next" value="{safe_next}">
+          <label>Username<input name="username" autocomplete="username" autofocus></label>
+          <label>Password<input name="password" type="password" autocomplete="current-password"></label>
+          <div class="actions"><button class="button primary" type="submit">Log In</button></div>
+        </form>
+        """
     kc_button = ""
     if kc_enabled:
+        border = f'style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);text-align:center"' if local_enabled else 'style="text-align:center"'
         kc_button = f"""
-          <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);text-align:center">
-            <a class="button" href="/auth/keycloak?next={escape(_safe_next_url(next_url))}" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none;width:100%;justify-content:center;padding:10px">
+          <div {border}>
+            <a class="button" href="/auth/keycloak?next={safe_next}" style="display:inline-flex;align-items:center;gap:8px;text-decoration:none;width:100%;justify-content:center;padding:10px">
               <svg width="20" height="20" viewBox="0 0 512 512" fill="none"><path d="M256 0C114.6 0 0 114.6 0 256s114.6 256 256 256 256-114.6 256-256S397.4 0 256 0z" fill="#4a86c8"/><path d="M340 180h-45l-39 60-39-60h-45l62 95-62 95h45l39-60 39 60h45l-62-95z" fill="white"/></svg>
               Login with Keycloak
             </a>
           </div>
         """
+    if not local_enabled and not kc_enabled:
+        local_form = '<div class="notice error">No authentication methods are enabled. Enable local auth or Keycloak SSO in Settings.</div>'
     body = f"""
       <section class="login">
         <h1>RAMPART Login</h1>
         {_notice(None, error)}
-        <form class="panel form" method="post" action="/login">
-          <input type="hidden" name="next" value="{escape(_safe_next_url(next_url))}">
-          <label>Username<input name="username" autocomplete="username" autofocus></label>
-          <label>Password<input name="password" type="password" autocomplete="current-password"></label>
-          <div class="actions"><button class="button primary" type="submit">Log In</button></div>
-        </form>
+        {local_form}
         {kc_button}
       </section>
     """

@@ -44,6 +44,7 @@ class AuthConfig(BaseModel):
     admin_username: str = "admin"
     admin_password: str = ""
     admin_password_hash: str = ""
+    local_auth_enabled: bool = True
     auth_state_path: str = "data/auth.json"
     session_secret: str = ""
     session_cookie_name: str = "rampart_session"
@@ -296,6 +297,8 @@ def _apply_local_settings(config: AppConfig) -> None:
         config.syslog.port = settings.syslog_port
     if settings.syslog_send_interval_seconds is not None:
         config.syslog.send_interval_seconds = settings.syslog_send_interval_seconds
+    if settings.local_auth_enabled is not None:
+        config.auth.local_auth_enabled = settings.local_auth_enabled
     if settings.keycloak_admin_enabled is not None:
         config.auth.keycloak_admin.enabled = settings.keycloak_admin_enabled
     if settings.keycloak_admin_base_url:
