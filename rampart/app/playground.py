@@ -398,12 +398,33 @@ async def playground_evaluate(request: Request) -> HTMLResponse:
         return HTMLResponse(f'<div class="notice error">{escape(str(e))}</div>')
 
     test_client_id = form.get("test_client_id", "").strip()
+    user = openai_request.get("user", "")
+    resolved_groups = []
+    mapped_rampart_groups = []
     if test_client_id:
-        selected_policies = _resolve_client_policies(config, test_client_id)
+        # Try user group resolution first (same precedence as API)
+        if user and config.user_group_resolver.enabled:
+            try:
+                from rampart.app.main import resolve_policies_for_user
+                result = await resolve_policies_for_user(config, user)
+                if result and result.policies:
+                    selected_policies = result.policies
+                    resolved_groups = result.external_groups
+                    mapped_rampart_groups = result.rampart_group_ids
+                else:
+                    selected_policies = _resolve_client_policies(config, test_client_id)
+                    if result:
+                        resolved_groups = result.external_groups
+            except Exception:
+                selected_policies = _resolve_client_policies(config, test_client_id)
+        else:
+            selected_policies = _resolve_client_policies(config, test_client_id)
         if not selected_policies:
             return HTMLResponse(f'<div class="notice error">Client {escape(test_client_id)} not found or has no policies.</div>')
     else:
         selected_policies = _resolve_selected_policies(config, form)
+        resolved_groups = []
+        mapped_rampart_groups = []
 
     from rampart.app.policy.engine import PolicyEngine
     engine = PolicyEngine(config, selected_policies)
@@ -419,6 +440,8 @@ async def playground_evaluate(request: Request) -> HTMLResponse:
         client_id=test_client_id or None,
         model=openai_request.get("model"),
         messages=openai_request.get("messages", []),
+        resolved_groups=resolved_groups,
+        mapped_rampart_groups=mapped_rampart_groups,
         decision="fail" if any(r["status"] == "match" for r in policy_results) else "accept",
         policy_results=build_policy_results(selected_policies, response.violations),
         violations=[v.model_dump() for v in response.violations],
