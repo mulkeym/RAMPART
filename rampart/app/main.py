@@ -120,10 +120,13 @@ async def evaluate(payload: EvaluationRequest, request: Request) -> EvaluationRe
     start = time()
     response = await engine.evaluate(payload.request)
     eval_ms = int((time() - start) * 1000)
+    sanitize_ms = 0
     if response.violations and payload.include_sanitized_request:
+        sanitize_start = time()
         response = await engine.sanitize_response(payload.request, response)
+        sanitize_ms = int((time() - sanitize_start) * 1000)
     _track_evaluation(config, request, response, client_record, policies, user=user)
-    _log_prompt(request, payload.request, response, policies, client_record, user, eval_ms, source="api")
+    _log_prompt(request, payload.request, response, policies, client_record, user, eval_ms, source="api", sanitize_ms=sanitize_ms)
     if client_record:
         record_evaluation(client_record.id, len(response.violations), config.clients.path)
     return response
@@ -373,6 +376,7 @@ def _log_prompt(
     user: Optional[str],
     eval_ms: int,
     source: str,
+    sanitize_ms: int = 0,
 ) -> None:
     grp = _last_user_group_result
     log_prompt(PromptLogEntry(
@@ -390,6 +394,7 @@ def _log_prompt(
         violations=[v.model_dump() for v in response.violations],
         applied_policies=[p.id for p in policies if p.enabled],
         eval_ms=eval_ms,
+        sanitize_ms=sanitize_ms if sanitize_ms else None,
         warnings=response.warnings or [],
     ))
 

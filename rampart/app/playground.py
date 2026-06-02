@@ -610,8 +610,11 @@ async def playground_evaluate(request: Request) -> HTMLResponse:
     response = await engine.evaluate(openai_request)
     eval_ms = int((time.time() - start_time) * 1000)
     # Sanitize separately so eval_ms only reflects policy evaluation time
+    sanitize_ms = 0
     if response.violations:
+        sanitize_start = time.time()
         response = await engine.sanitize_response(openai_request, response)
+        sanitize_ms = int((time.time() - sanitize_start) * 1000)
 
     policy_results = _build_policy_results(selected_policies, response)
 
@@ -653,7 +656,7 @@ async def playground_evaluate(request: Request) -> HTMLResponse:
         "policy_ids": [p.id for p in selected_policies],
         "trace": resolution_trace,
     }
-    results_html = _render_results(response, policy_results, eval_ms, llm_response_html, resolution_ctx)
+    results_html = _render_results(response, policy_results, eval_ms, llm_response_html, resolution_ctx, sanitize_ms)
     return HTMLResponse(results_html)
 
 
@@ -916,7 +919,7 @@ def _source_breakdown(policy_results: list[dict]) -> str:
     return ", ".join(parts) + " violation" + ("s" if sum(sources.values()) != 1 else "")
 
 
-def _render_results(response, policy_results: list[dict], eval_ms: int, llm_response_html: str, resolution_ctx: dict = None) -> str:
+def _render_results(response, policy_results: list[dict], eval_ms: int, llm_response_html: str, resolution_ctx: dict = None, sanitize_ms: int = 0) -> str:
     has_match = any(r["status"] == "match" for r in policy_results)
     decision_class = "blocked" if has_match else "accepted"
     decision_label = "BLOCKED" if has_match else "ACCEPTED"
@@ -1017,7 +1020,7 @@ def _render_results(response, policy_results: list[dict], eval_ms: int, llm_resp
           <div class="pg-decision {decision_class}">{decision_label}</div>
           {"".join(f'<div style="padding:8px 12px;border-radius:6px;background:var(--warning-bg);border:1px solid var(--warning-border);color:var(--warning);font-size:12px;margin-bottom:8px">{escape(w)}</div>' for w in (response.warnings or []))}
           {"".join(policy_items)}
-          <div class="muted" style="font-size:11px;margin-top:12px">Policy evaluation: {eval_ms}ms &mdash; {_source_breakdown(policy_results)}</div>
+          <div class="muted" style="font-size:11px;margin-top:12px">Policy evaluation: {eval_ms}ms{f" | Sanitization: {sanitize_ms}ms" if sanitize_ms else ""} &mdash; {_source_breakdown(policy_results)}</div>
         </div>
         <div>
           <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:8px">Sanitized Request</div>

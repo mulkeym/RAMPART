@@ -37,6 +37,7 @@ class PromptLogEntry(BaseModel):
     violations: list[dict[str, Any]] = Field(default_factory=list)
     applied_policies: list[str] = Field(default_factory=list)
     eval_ms: Optional[int] = None
+    sanitize_ms: Optional[int] = None
     warnings: list[str] = Field(default_factory=list)
 
 

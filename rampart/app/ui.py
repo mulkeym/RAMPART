@@ -269,7 +269,7 @@ async def prompt_log_page(request: Request, message: Optional[str] = None) -> HT
         f'<td>{escape(_truncate_prompt(e.messages))}</td>'
         f'<td><span class="decision-pill {"fail" if e.decision == "fail" else "accept"}">{escape(e.decision)}</span></td>'
         f'<td>{_policy_results_html(e.policy_results)}</td>'
-        f'<td>{e.eval_ms or 0}ms</td>'
+        f'<td>{e.eval_ms or 0}ms{f" + {e.sanitize_ms}ms" if e.sanitize_ms else ""}</td>'
         f'</tr>'
         for e in entries
     )
