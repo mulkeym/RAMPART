@@ -35,11 +35,11 @@ router = APIRouter(include_in_schema=False)
 
 @router.get("/", response_class=HTMLResponse)
 async def redirect_home() -> RedirectResponse:
-    return RedirectResponse("/ui/policies", status_code=303)
+    return RedirectResponse("/ui/dashboard", status_code=303)
 
 
 @router.get("/login", response_class=HTMLResponse)
-async def login_form(next: str = "/ui/policies", error: Optional[str] = None) -> HTMLResponse:
+async def login_form(next: str = "/ui/dashboard", error: Optional[str] = None) -> HTMLResponse:
     return HTMLResponse(_login_page(next, error))
 
 
@@ -51,7 +51,7 @@ async def login(request: Request) -> HTMLResponse:
     form = {key: values[-1] for key, values in parse_qs(body, keep_blank_values=True).items()}
     username = form.get("username", "")
     password = form.get("password", "")
-    next_url = _safe_next_url(form.get("next", "/ui/policies"))
+    next_url = _safe_next_url(form.get("next", "/ui/dashboard"))
     if not get_config().auth.local_auth_enabled:
         audit_event(request, "auth.login", actor=username or None, result="failure", detail="local auth disabled")
         return HTMLResponse(_login_page(next_url, "Local authentication is disabled. Use Keycloak SSO."), status_code=403)
@@ -69,7 +69,7 @@ async def login(request: Request) -> HTMLResponse:
 
 
 @router.get("/auth/keycloak", response_class=HTMLResponse)
-async def keycloak_login(request: Request, next: str = "/ui/policies") -> RedirectResponse:
+async def keycloak_login(request: Request, next: str = "/ui/dashboard") -> RedirectResponse:
     config = get_config()
     kc = config.auth.keycloak_admin
     if not kc.enabled:
@@ -92,7 +92,7 @@ async def keycloak_login(request: Request, next: str = "/ui/policies") -> Redire
 
 
 @router.get("/auth/keycloak/callback", response_class=HTMLResponse)
-async def keycloak_callback(request: Request, code: str = "", state: str = "/ui/policies", error: Optional[str] = None, error_description: Optional[str] = None) -> HTMLResponse:
+async def keycloak_callback(request: Request, code: str = "", state: str = "/ui/dashboard", error: Optional[str] = None, error_description: Optional[str] = None) -> HTMLResponse:
     if error:
         detail = error_description or error
         return RedirectResponse(f"/login?error=Keycloak:+{quote(detail[:200])}", status_code=303)
@@ -190,7 +190,7 @@ async def redirect_ui(request: Request) -> RedirectResponse:
     if redirect:
         audit_event(request, "ui.unauthorized", result="failure", target="/ui")
         return redirect
-    return RedirectResponse("/ui/policies", status_code=303)
+    return RedirectResponse("/ui/dashboard", status_code=303)
 
 
 @router.get("/ui/policies", response_class=HTMLResponse)
@@ -2266,6 +2266,8 @@ function testLlm(prefix){
 def _page(title: str, body: str, actor: Optional[str] = None) -> str:
     def _nav_class(label: str) -> str:
         t = title.lower()
+        if label == "Dashboard" and "dashboard" in t:
+            return "active"
         if label == "Policies" and "polic" in t:
             return "active"
         if label == "Clients" and ("api key" in t or "client" in t):
@@ -2290,6 +2292,7 @@ def _page(title: str, body: str, actor: Optional[str] = None) -> str:
 
     auth_nav = (
         f'<div class="nav-links">'
+        f'<a class="{_nav_class("Dashboard")}" href="/ui/dashboard">Dashboard</a>'
         f'<a class="{_nav_class("Policies")}" href="/ui/policies">Policies</a>'
         f'<a class="{_nav_class("Clients")}" href="/ui/clients">Clients</a>'
         f'<a class="{_nav_class("Groups")}" href="/ui/groups">Groups</a>'
