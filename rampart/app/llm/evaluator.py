@@ -260,7 +260,7 @@ class LlmEvaluator:
         )
         payload = self._build_payload([
             {"role": "user", "content": guardian_prompt},
-        ], logprobs=True, top_logprobs=5, max_tokens=100)
+        ], logprobs=True, top_logprobs=5, max_tokens=2)
 
         try:
             client = self._client()
