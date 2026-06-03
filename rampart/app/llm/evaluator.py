@@ -143,6 +143,9 @@ class LlmEvaluator:
             **kwargs,
         }
         if llm_config.disable_thinking:
+            # vLLM / Gemma 4 format
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
+            # Anthropic format (Claude)
             payload["thinking"] = {"type": "disabled"}
         return payload
 
