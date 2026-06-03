@@ -265,3 +265,334 @@ async def dashboard_data(request: Request, range: str = "24h"):
     config = get_config()
     data = aggregate_dashboard_data(config.tracking.log_path, range_hours=hours)
     return JSONResponse(data)
+
+
+# ── Chart.js serving endpoint ──────────────────────────────────────────────
+
+@router.get("/ui/dashboard/chartjs")
+async def serve_chartjs():
+    from fastapi.responses import Response
+    from pathlib import Path as _P
+    chartjs_path = _P(__file__).parent / "chartjs.min.js"
+    if chartjs_path.exists():
+        return Response(content=chartjs_path.read_bytes(), media_type="application/javascript")
+    return Response(content=b"// Chart.js not found", media_type="application/javascript")
+
+
+# ── Dashboard HTML page ────────────────────────────────────────────────────
+
+@router.get("/ui/dashboard", response_class=HTMLResponse)
+async def dashboard_page(request: Request, range: str = "24h"):
+    redirect = require_ui_user(request)
+    if redirect:
+        return redirect
+    from rampart.app.ui import _page
+    actor = read_session_user(request)
+    body = _dashboard_body(range)
+    return HTMLResponse(_page("RAMPART Dashboard", body, actor))
+
+
+def _dashboard_body(range_val: str) -> str:
+    """Return the full HTML body for the dashboard page."""
+    ranges = [("1h", "1h"), ("6h", "6h"), ("24h", "24h")]
+    pills = ""
+    for label, val in ranges:
+        cls = "button small primary" if val == range_val else "button small"
+        pills += (
+            f'<button class="{cls}" '
+            f"onclick=\"location.href='/ui/dashboard?range={val}'\">"
+            f"{label}</button> "
+        )
+
+    return f"""
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+  <h2 style="margin:0">Dashboard</h2>
+  <div style="display:flex;align-items:center;gap:8px">
+    {pills}
+    <span style="color:var(--muted);font-size:0.85em;margin-left:8px"
+          id="dash-refresh-indicator">Auto-refresh: 30s</span>
+  </div>
+</div>
+
+<div id="dash-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px"></div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+  <div class="panel" style="padding:16px">
+    <h3 style="margin:0 0 8px">Request Volume</h3>
+    <canvas id="chart-volume"></canvas>
+  </div>
+  <div class="panel" style="padding:16px">
+    <h3 style="margin:0 0 8px">Policy Violations</h3>
+    <canvas id="chart-policies"></canvas>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+  <div class="panel" style="padding:16px">
+    <h3 style="margin:0 0 8px">Eval Source Breakdown</h3>
+    <canvas id="chart-sources"></canvas>
+  </div>
+  <div class="panel" style="padding:16px">
+    <h3 style="margin:0 0 8px">Model Usage</h3>
+    <canvas id="chart-models"></canvas>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px">
+  <div class="panel" style="padding:16px">
+    <h3 style="margin:0 0 8px">Top Users</h3>
+    <div id="dash-top-users" style="color:var(--muted);font-size:0.9em">Loading&hellip;</div>
+  </div>
+  <div class="panel" style="padding:16px">
+    <h3 style="margin:0 0 8px">Top Clients</h3>
+    <div id="dash-top-clients" style="color:var(--muted);font-size:0.9em">Loading&hellip;</div>
+  </div>
+  <div class="panel" style="padding:16px">
+    <h3 style="margin:0 0 8px">Flagged Users</h3>
+    <div id="dash-flagged" style="color:var(--muted);font-size:0.9em">Loading&hellip;</div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+  <div class="panel" style="padding:16px">
+    <h3 style="margin:0 0 8px">Group Activity</h3>
+    <canvas id="chart-groups"></canvas>
+  </div>
+  <div class="panel" style="padding:16px">
+    <h3 style="margin:0 0 8px">Recent Violations</h3>
+    <div id="dash-recent" style="color:var(--muted);font-size:0.9em;max-height:400px;overflow-y:auto">Loading&hellip;</div>
+  </div>
+</div>
+
+<script src="/ui/dashboard/chartjs"></script>
+<script>
+{_dashboard_js(range_val)}
+</script>
+"""
+
+
+def _dashboard_js(range_val: str) -> str:
+    """Return inline JavaScript for the dashboard."""
+    return """
+(function() {
+  var currentRange = """ + json.dumps(range_val) + """;
+  var charts = {};
+
+  function escH(s) {
+    if (s == null) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  var darkThemeDefaults = {
+    responsive: true,
+    maintainAspectRatio: true,
+    plugins: {
+      legend: { labels: { color: '#8b949e' } }
+    },
+    scales: {
+      x: {
+        ticks: { color: '#8b949e' },
+        grid: { color: 'rgba(255,255,255,0.05)' }
+      },
+      y: {
+        ticks: { color: '#8b949e' },
+        grid: { color: 'rgba(255,255,255,0.05)' }
+      }
+    }
+  };
+
+  function renderChart(id, type, data, options) {
+    if (charts[id]) {
+      charts[id].destroy();
+    }
+    var ctx = document.getElementById(id);
+    if (!ctx) return;
+    var merged = Object.assign({}, darkThemeDefaults, options || {});
+    charts[id] = new Chart(ctx.getContext('2d'), {
+      type: type,
+      data: data,
+      options: merged
+    });
+  }
+
+  function renderDashboard(d) {
+    // ── Stats cards ─────────────────────────────────────────────────
+    var s = d.stats || {};
+    var statsHtml = '';
+    var statItems = [
+      { label: 'Total Requests', value: s.total_requests || 0, color: '' },
+      { label: 'Violations', value: s.total_violations || 0, color: (s.total_violations > 0 ? 'var(--danger)' : '') },
+      { label: 'Active Users', value: s.active_users || 0, color: '' },
+      { label: 'Avg Eval (ms)', value: s.avg_eval_ms || 0, color: '' },
+      { label: 'P95 Eval (ms)', value: s.p95_eval_ms || 0, color: '' }
+    ];
+    for (var i = 0; i < statItems.length; i++) {
+      var si = statItems[i];
+      var colorStyle = si.color ? 'color:' + si.color + ';' : '';
+      statsHtml += '<div class="panel" style="padding:16px;text-align:center">' +
+        '<div style="font-size:0.85em;color:var(--muted);margin-bottom:4px">' + escH(si.label) + '</div>' +
+        '<div style="font-size:1.6em;font-weight:700;' + colorStyle + '">' + escH(String(si.value)) + '</div>' +
+        '</div>';
+    }
+    var statsEl = document.getElementById('dash-stats');
+    if (statsEl) statsEl.innerHTML = statsHtml;
+
+    // ── Volume chart (stacked bar) ──────────────────────────────────
+    var vol = d.volume || [];
+    var volLabels = vol.map(function(v) {
+      var dt = new Date(v.time);
+      return dt.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    });
+    renderChart('chart-volume', 'bar', {
+      labels: volLabels,
+      datasets: [
+        { label: 'Accepted', data: vol.map(function(v){ return v.accepted; }), backgroundColor: '#3fb950' },
+        { label: 'Failed', data: vol.map(function(v){ return v.failed; }), backgroundColor: '#f85149' }
+      ]
+    }, {
+      responsive: true,
+      plugins: { legend: { labels: { color: '#8b949e' } } },
+      scales: {
+        x: { stacked: true, ticks: { color: '#8b949e' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { stacked: true, beginAtZero: true, ticks: { color: '#8b949e' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+      }
+    });
+
+    // ── Policy hits (horizontal bar) ────────────────────────────────
+    var ph = d.policy_hits || [];
+    var severityColors = { critical: '#f85149', high: '#d29922', medium: '#e3b341', low: '#8b949e' };
+    renderChart('chart-policies', 'bar', {
+      labels: ph.map(function(p){ return p.policy_id; }),
+      datasets: [{
+        label: 'Hits',
+        data: ph.map(function(p){ return p.count; }),
+        backgroundColor: ph.map(function(p){ return severityColors[p.severity] || '#8b949e'; })
+      }]
+    }, {
+      indexAxis: 'y',
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { beginAtZero: true, ticks: { color: '#8b949e' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+      }
+    });
+
+    // ── Eval sources (doughnut) ─────────────────────────────────────
+    var es = d.eval_sources || {};
+    var esLabels = Object.keys(es);
+    var esColors = { deterministic: '#3b82f6', llm: '#8b5cf6', vision: '#06b6d4' };
+    var esBg = esLabels.map(function(l){ return esColors[l] || '#8b949e'; });
+    renderChart('chart-sources', 'doughnut', {
+      labels: esLabels,
+      datasets: [{ data: esLabels.map(function(l){ return es[l]; }), backgroundColor: esBg }]
+    }, {
+      responsive: true,
+      plugins: { legend: { labels: { color: '#8b949e' } } },
+      scales: {}
+    });
+
+    // ── Model usage (doughnut) ──────────────────────────────────────
+    var mu = d.model_usage || {};
+    var muLabels = Object.keys(mu);
+    var palette = ['#3b82f6','#8b5cf6','#06b6d4','#f59e0b','#10b981','#ef4444','#ec4899','#6366f1','#14b8a6','#f97316'];
+    var muBg = muLabels.map(function(_, i){ return palette[i % palette.length]; });
+    renderChart('chart-models', 'doughnut', {
+      labels: muLabels,
+      datasets: [{ data: muLabels.map(function(l){ return mu[l]; }), backgroundColor: muBg }]
+    }, {
+      responsive: true,
+      plugins: { legend: { labels: { color: '#8b949e' } } },
+      scales: {}
+    });
+
+    // ── Group activity (horizontal bar) ─────────────────────────────
+    var ga = d.group_activity || {};
+    var gaLabels = Object.keys(ga);
+    renderChart('chart-groups', 'bar', {
+      labels: gaLabels,
+      datasets: [{
+        label: 'Requests',
+        data: gaLabels.map(function(l){ return ga[l]; }),
+        backgroundColor: '#3b82f6'
+      }]
+    }, {
+      indexAxis: 'y',
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { beginAtZero: true, ticks: { color: '#8b949e' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+      }
+    });
+
+    // ── Top users table ─────────────────────────────────────────────
+    var tu = d.top_users || [];
+    var tuHtml = '';
+    for (var i = 0; i < tu.length; i++) {
+      tuHtml += '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)">' +
+        '<span>' + (i+1) + '. ' + escH(tu[i].user) + '</span>' +
+        '<span style="color:var(--muted)">' + escH(String(tu[i].count)) + '</span></div>';
+    }
+    var tuEl = document.getElementById('dash-top-users');
+    if (tuEl) tuEl.innerHTML = tuHtml || '<span style="color:var(--muted)">No data</span>';
+
+    // ── Top clients table ───────────────────────────────────────────
+    var tc = d.top_clients || [];
+    var tcHtml = '';
+    for (var i = 0; i < tc.length; i++) {
+      tcHtml += '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)">' +
+        '<span>' + (i+1) + '. ' + escH(tc[i].client_id) + '</span>' +
+        '<span style="color:var(--muted)">' + escH(String(tc[i].count)) + '</span></div>';
+    }
+    var tcEl = document.getElementById('dash-top-clients');
+    if (tcEl) tcEl.innerHTML = tcHtml || '<span style="color:var(--muted)">No data</span>';
+
+    // ── Flagged users ───────────────────────────────────────────────
+    var fu = d.flagged_users || [];
+    var fuHtml = '';
+    for (var i = 0; i < fu.length; i++) {
+      fuHtml += '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)">' +
+        '<span style="color:var(--danger)">' + (i+1) + '. ' + escH(fu[i].user) + '</span>' +
+        '<span style="color:var(--danger)">' + escH(String(fu[i].count)) + '</span></div>';
+    }
+    var fuEl = document.getElementById('dash-flagged');
+    if (fuEl) fuEl.innerHTML = fuHtml || '<span style="color:var(--muted)">No data</span>';
+
+    // ── Recent violations ───────────────────────────────────────────
+    var rv = d.recent_violations || [];
+    var rvHtml = '';
+    var sevColors = { critical: '#f85149', high: '#d29922', medium: '#e3b341', low: '#8b949e' };
+    for (var i = 0; i < rv.length; i++) {
+      var r = rv[i];
+      var ts = r.timestamp ? new Date(r.timestamp).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'}) : '??';
+      var vList = r.violations || [];
+      for (var j = 0; j < vList.length; j++) {
+        var v = vList[j];
+        var sev = v.severity || 'unknown';
+        var sevColor = sevColors[sev] || '#8b949e';
+        rvHtml += '<div style="display:flex;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);font-size:0.85em;flex-wrap:wrap">' +
+          '<span style="color:var(--muted)">' + escH(ts) + '</span>' +
+          '<span style="color:' + sevColor + ';font-weight:600">' + escH(sev) + '</span>' +
+          '<span>' + escH(v.policy_id || '') + '</span>' +
+          '<span style="color:var(--muted)">' + escH(r.user || r.client_id || '') + '</span>' +
+          '</div>';
+      }
+    }
+    var rvEl = document.getElementById('dash-recent');
+    if (rvEl) rvEl.innerHTML = rvHtml || '<span style="color:var(--muted)">No violations</span>';
+  }
+
+  function fetchDashboard() {
+    fetch('/ui/dashboard/data?range=' + encodeURIComponent(currentRange))
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (!data.error) renderDashboard(data);
+      })
+      .catch(function(err) { console.error('Dashboard fetch error:', err); });
+  }
+
+  fetchDashboard();
+  setInterval(fetchDashboard, 30000);
+})();
+"""
