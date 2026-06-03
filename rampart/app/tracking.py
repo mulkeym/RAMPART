@@ -44,6 +44,8 @@ def write_evaluation_event(
     client: ClientContext,
     response: EvaluationResponse,
     applied_policies: list[str],
+    model: str = "",
+    eval_ms: int = 0,
 ) -> None:
     if not config.enabled:
         return
@@ -59,6 +61,8 @@ def write_evaluation_event(
         "owner": client.owner,
         "request_id": client.request_id,
         "user": client.user,
+        "model": model,
+        "eval_ms": eval_ms,
         "decision": response.decision,
         "applied_policies": applied_policies,
         "violations": [

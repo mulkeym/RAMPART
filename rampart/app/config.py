@@ -70,7 +70,7 @@ class SettingsStoreConfig(BaseModel):
 class TrackingConfig(BaseModel):
     enabled: bool = True
     log_path: str = "logs/evaluations.jsonl"
-    log_accepted_requests: bool = False
+    log_accepted_requests: bool = True
     include_sanitized_prompt: bool = False
 
 
