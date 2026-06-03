@@ -1689,9 +1689,7 @@ def _settings_form(config, settings: RuntimeSettings, message: Optional[str] = N
             <div class="hint" style="margin-top:4px">Uncheck for self-signed certificates.</div>
           </div>
           <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center">
-            <form method="post" action="/ui/settings/purge-group-cache" style="margin:0">
-              <button class="button small danger" type="submit" onclick="return confirm('Purge all cached user-group memberships?')">Purge Group Cache</button>
-            </form>
+            <button type="button" class="button small danger" onclick="if(confirm('Purge all cached user-group memberships?'))fetch('/ui/settings/purge-group-cache',{{method:'POST'}}).then(function(){{location.reload()}})">Purge Group Cache</button>
             <span class="hint" style="margin:0">Clear all cached user-to-group mappings. Next lookup will query Keycloak fresh.</span>
           </div>
         </fieldset>
