@@ -141,6 +141,25 @@ def aggregate_dashboard_data(log_path: str, range_hours: int = 24) -> Dict[str, 
         })
         bucket_start = bucket_end
 
+    # ── eval time over time ──────────────────────────────────────────────
+    eval_time_series: List[Dict[str, Any]] = []
+    bucket_start = window_start
+    while bucket_start < now:
+        bucket_end = bucket_start + bucket_delta
+        times = []
+        for e in current_events:
+            ts = e["_ts"]
+            if bucket_start <= ts < bucket_end:
+                ms = e.get("eval_ms")
+                if ms and isinstance(ms, (int, float)):
+                    times.append(ms)
+        avg = int(sum(times) / len(times)) if times else 0
+        eval_time_series.append({
+            "time": bucket_start.isoformat(),
+            "avg_ms": avg,
+        })
+        bucket_start = bucket_end
+
     # ── policy hits (from violations, top 10) ───────────────────────────
     policy_counter: Dict[str, Dict[str, Any]] = {}
     for e in current_events:
@@ -254,6 +273,7 @@ def aggregate_dashboard_data(log_path: str, range_hours: int = 24) -> Dict[str, 
         "flagged_users": flagged_users,
         "group_activity": group_activity,
         "recent_violations": recent_violations,
+        "eval_time_series": eval_time_series,
     }
 
 
@@ -335,6 +355,13 @@ def _dashboard_body(range_val: str) -> str:
   <div class="panel" style="padding:16px">
     <h3 style="margin:0 0 8px">Model Usage</h3>
     <canvas id="chart-models"></canvas>
+  </div>
+</div>
+
+<div style="margin-bottom:20px">
+  <div class="panel" style="padding:16px">
+    <h3 style="margin:0 0 8px">Avg Evaluation Time</h3>
+    <canvas id="chart-eval-time" height="120"></canvas>
   </div>
 </div>
 
@@ -504,6 +531,35 @@ def _dashboard_js(range_val: str) -> str:
       responsive: true,
       plugins: { legend: { labels: { color: '#8b949e' } } },
       scales: {}
+    });
+
+    // ── Eval time over time (line chart) ──────────────────────────
+    var ets = d.eval_time_series || [];
+    var etLabels = ets.map(function(b){
+      var t = b.time || '';
+      try { var d2 = new Date(t); return d2.getHours() + ':' + String(d2.getMinutes()).padStart(2,'0'); } catch(e){ return t; }
+    });
+    var etData = ets.map(function(b){ return b.avg_ms; });
+    renderChart('chart-eval-time', 'line', {
+      labels: etLabels,
+      datasets: [{
+        label: 'Avg eval time (ms)',
+        data: etData,
+        borderColor: '#8b5cf6',
+        backgroundColor: 'rgba(139,92,246,0.1)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 2,
+        pointHoverRadius: 5
+      }]
+    }, {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#8b949e' } } },
+      scales: {
+        x: { ticks: { color: '#8b949e', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.03)' } },
+        y: { ticks: { color: '#8b949e', callback: function(v){ return v + 'ms'; } }, grid: { color: 'rgba(255,255,255,0.05)' } }
+      }
     });
 
     // ── Group activity (horizontal bar) ─────────────────────────────
