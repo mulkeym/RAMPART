@@ -42,16 +42,15 @@ Request:
 
 
 def build_batch_policy_check_prompt(request_json: str, policies: list[tuple]) -> str:
-    """Build a single prompt that checks multiple policies at once. Returns only IDs of violating policies."""
+    """Build a single prompt that checks multiple policies at once. Returns true/false for each policy."""
     policy_list = "\n".join(
         f"- {policy.id}: {check.instruction or policy.description}"
         for policy, check in policies
     )
+    example_keys = ", ".join(f'"{policy.id}": false' for policy, _ in policies[:3])
     return f"""You are RAMPART, a strict API request firewall evaluator.
 
-You MUST check the request against EVERY policy below independently.
-A request can violate multiple policies at the same time.
-Do not stop after finding the first violation — check ALL policies.
+Check the request against each policy listed below. For EACH policy, answer true if it violates or false if it does not.
 
 Policies:
 {policy_list}
@@ -59,15 +58,10 @@ Policies:
 Request:
 {request_json}
 
-For EACH policy above, decide independently if the request violates it.
-A single request can match zero, one, or many policies simultaneously.
+Return valid JSON with EVERY policy ID as a key and true or false as the value. You MUST include ALL policies.
 
-Return only valid JSON — an array of ALL violated policy IDs.
-If no policies are violated, return an empty array.
-
-Example with multiple violations: ["no-pii", "harmful-content", "no-puppies"]
-Example with one violation: ["no-pii"]
-Example with no violations: []
+Example format:
+{{{example_keys}}}
 """
 
 

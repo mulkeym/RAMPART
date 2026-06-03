@@ -125,8 +125,13 @@ class LlmEvaluator:
             response.raise_for_status()
 
             content = response.json()["choices"][0]["message"]["content"]
-            violated_ids = json.loads(_strip_json_fence(content))
-            if not isinstance(violated_ids, list):
+            result = json.loads(_strip_json_fence(content))
+            # Support both formats: {"policy-id": true/false} or ["policy-id", ...]
+            if isinstance(result, dict):
+                violated_ids = [k for k, v in result.items() if v is True]
+            elif isinstance(result, list):
+                violated_ids = result
+            else:
                 violated_ids = []
         except (httpx.HTTPError, KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
             if not llm_config.fail_closed_on_error:
@@ -141,7 +146,6 @@ class LlmEvaluator:
                 )
             ]
 
-        violated_set = set(violated_ids)
         policy_map = {policy.id: policy for policy, _ in checks}
         violations: list[Violation] = []
         for pid in violated_ids:
