@@ -28,13 +28,7 @@ Note: Requests may contain "[base64 image omitted]" placeholders where images we
 attached. This is normal multimodal content and should NOT be treated as suspicious
 encoding, injection, or obfuscation.
 
-Return only valid JSON matching this shape:
-{{
-  "violates": true,
-  "message": "short reason"
-}}
-
-If there is no violation, return {{"violates": false, "message": ""}}.
+Return only valid JSON: {{"violates": true}} or {{"violates": false}}
 
 Request:
 {request_json}
@@ -42,15 +36,15 @@ Request:
 
 
 def build_batch_policy_check_prompt(request_json: str, policies: list[tuple]) -> str:
-    """Build a single prompt that checks multiple policies at once. Returns true/false for each policy."""
+    """Build a single prompt that checks multiple policies at once. Returns array of violated policy IDs."""
     policy_list = "\n".join(
         f"- {policy.id}: {check.instruction or policy.description}"
         for policy, check in policies
     )
-    example_keys = ", ".join(f'"{policy.id}": false' for policy, _ in policies[:3])
     return f"""You are RAMPART, a strict API request firewall evaluator.
 
-Check the request against each policy listed below. For EACH policy, answer true if it violates or false if it does not.
+Check the request against EVERY policy below. Evaluate each policy independently.
+A request can violate multiple policies. List ALL that are violated.
 
 Policies:
 {policy_list}
@@ -58,10 +52,8 @@ Policies:
 Request:
 {request_json}
 
-Return valid JSON with EVERY policy ID as a key and true or false as the value. You MUST include ALL policies.
-
-Example format:
-{{{example_keys}}}
+Return ONLY a JSON array listing EVERY violated policy ID. Check each policy one by one and include all that match.
+If none are violated return [].
 """
 
 
