@@ -361,7 +361,7 @@ def _dashboard_body(range_val: str) -> str:
 <div style="margin-bottom:20px">
   <div class="panel" style="padding:16px">
     <h3 style="margin:0 0 8px">Avg Evaluation Time</h3>
-    <canvas id="chart-eval-time" height="120"></canvas>
+    <div style="height:200px"><canvas id="chart-eval-time"></canvas></div>
   </div>
 </div>
 
@@ -558,7 +558,7 @@ def _dashboard_js(range_val: str) -> str:
       plugins: { legend: { labels: { color: '#8b949e' } } },
       scales: {
         x: { ticks: { color: '#8b949e', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.03)' } },
-        y: { ticks: { color: '#8b949e', callback: function(v){ return v + 'ms'; } }, grid: { color: 'rgba(255,255,255,0.05)' } }
+        y: { beginAtZero: true, min: 0, ticks: { color: '#8b949e', callback: function(v){ return v + 'ms'; } }, grid: { color: 'rgba(255,255,255,0.05)' } }
       }
     });
 
