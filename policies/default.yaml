@@ -23,7 +23,7 @@ settings:
 tracking:
   enabled: true
   log_path: logs/evaluations.jsonl
-  log_accepted_requests: false
+  log_accepted_requests: true
   include_sanitized_prompt: false
 upstream:
   enabled: true
