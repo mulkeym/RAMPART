@@ -10,11 +10,34 @@ from rampart.app.llm.prompts import build_policy_check_prompt
 from rampart.app.models import Violation
 from rampart.app.tls import tls_verify
 
+# Shared connection pool — reuses TCP/TLS connections across requests
+_http_pool: Optional[httpx.AsyncClient] = None
+_http_pool_base_url: str = ""
+
+
+def _get_http_pool(base_url: str, timeout: float, verify_ssl) -> httpx.AsyncClient:
+    global _http_pool, _http_pool_base_url
+    if _http_pool is None or _http_pool_base_url != base_url:
+        if _http_pool is not None:
+            # Can't await close here, just replace
+            _http_pool = None
+        _http_pool = httpx.AsyncClient(
+            timeout=timeout,
+            verify=verify_ssl,
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        )
+        _http_pool_base_url = base_url
+    return _http_pool
+
 
 class LlmEvaluator:
     def __init__(self, config: AppConfig, policies: Optional[list[PolicyConfig]] = None):
         self.config = config
         self.policies = policies if policies is not None else config.policies
+
+    def _client(self) -> httpx.AsyncClient:
+        llm_config = self.config.llm_evaluator
+        return _get_http_pool(llm_config.base_url, llm_config.timeout_seconds, tls_verify())
 
     async def evaluate(self, request: dict[str, Any], stage: str = "pre") -> list[Violation]:
         llm_config = self.config.llm_evaluator
@@ -49,12 +72,12 @@ class LlmEvaluator:
             {"role": "user", "content": prompt},
         ])
         try:
-            async with httpx.AsyncClient(timeout=llm_config.timeout_seconds, verify=tls_verify()) as client:
-                response = await client.post(
-                    f"{llm_config.base_url.rstrip('/')}/chat/completions",
-                    json=payload,
-                )
-                response.raise_for_status()
+            client = self._client()
+            response = await client.post(
+                f"{llm_config.base_url.rstrip('/')}/chat/completions",
+                json=payload,
+            )
+            response.raise_for_status()
             content = response.json()["choices"][0]["message"]["content"]
             return json.loads(_strip_json_fence(content))
         except Exception:
@@ -94,12 +117,12 @@ class LlmEvaluator:
         ])
 
         try:
-            async with httpx.AsyncClient(timeout=llm_config.timeout_seconds, verify=tls_verify()) as client:
-                response = await client.post(
-                    f"{llm_config.base_url.rstrip('/')}/chat/completions",
-                    json=payload,
-                )
-                response.raise_for_status()
+            client = self._client()
+            response = await client.post(
+                f"{llm_config.base_url.rstrip('/')}/chat/completions",
+                json=payload,
+            )
+            response.raise_for_status()
 
             content = response.json()["choices"][0]["message"]["content"]
             violated_ids = json.loads(_strip_json_fence(content))
@@ -158,12 +181,12 @@ class LlmEvaluator:
         ])
 
         try:
-            async with httpx.AsyncClient(timeout=llm_config.timeout_seconds, verify=tls_verify()) as client:
-                response = await client.post(
-                    f"{llm_config.base_url.rstrip('/')}/chat/completions",
-                    json=payload,
-                )
-                response.raise_for_status()
+            client = self._client()
+            response = await client.post(
+                f"{llm_config.base_url.rstrip('/')}/chat/completions",
+                json=payload,
+            )
+            response.raise_for_status()
 
             content = response.json()["choices"][0]["message"]["content"]
             data = _parse_llm_json(content)
@@ -236,12 +259,12 @@ class LlmEvaluator:
         ], logprobs=True, top_logprobs=5, max_tokens=100)
 
         try:
-            async with httpx.AsyncClient(timeout=llm_config.timeout_seconds, verify=tls_verify()) as client:
-                response = await client.post(
-                    f"{llm_config.base_url.rstrip('/')}/chat/completions",
-                    json=payload,
-                )
-                response.raise_for_status()
+            client = self._client()
+            response = await client.post(
+                f"{llm_config.base_url.rstrip('/')}/chat/completions",
+                json=payload,
+            )
+            response.raise_for_status()
 
             body = response.json()
             violates, confidence, raw_output = _parse_guardian_response(body, llm_config.confidence_threshold)

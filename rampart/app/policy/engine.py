@@ -98,8 +98,20 @@ class PolicyEngine:
         return violations, denied_tools
 
 
-def _regex_violations(request: dict[str, Any], policy: PolicyConfig, pattern: str) -> list[Violation]:
+_compiled_regex_cache: dict[str, re.Pattern] = {}
+
+
+def _get_compiled_regex(pattern: str) -> re.Pattern:
+    cached = _compiled_regex_cache.get(pattern)
+    if cached is not None:
+        return cached
     compiled = re.compile(pattern, re.IGNORECASE)
+    _compiled_regex_cache[pattern] = compiled
+    return compiled
+
+
+def _regex_violations(request: dict[str, Any], policy: PolicyConfig, pattern: str) -> list[Violation]:
+    compiled = _get_compiled_regex(pattern)
     violations: list[Violation] = []
     for path, text in iter_message_text(request):
         if compiled.search(text):

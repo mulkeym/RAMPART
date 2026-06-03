@@ -116,10 +116,18 @@ async def evaluate(payload: EvaluationRequest, request: Request) -> EvaluationRe
     client_record = _resolve_client_record(config, request)
     user = extract_user(payload.request)
     policies = await _resolve_policies(config, client_record, user=user)
+    cache_key = _eval_cache_key(payload.request, policies)
+    response = _get_cached_eval(cache_key)
     engine = PolicyEngine(config, policies, include_sanitized_request=payload.include_sanitized_request)
-    start = time()
-    response = await engine.evaluate(payload.request)
-    eval_ms = int((time() - start) * 1000)
+
+    if response is None:
+        start = time()
+        response = await engine.evaluate(payload.request)
+        eval_ms = int((time() - start) * 1000)
+        _set_cached_eval(cache_key, response)
+    else:
+        eval_ms = 0  # cached
+
     sanitize_ms = 0
     if response.violations and payload.include_sanitized_request:
         sanitize_start = time()
