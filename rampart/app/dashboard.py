@@ -255,3 +255,13 @@ def aggregate_dashboard_data(log_path: str, range_hours: int = 24) -> Dict[str, 
         "group_activity": group_activity,
         "recent_violations": recent_violations,
     }
+
+
+@router.get("/ui/dashboard/data")
+async def dashboard_data(request: Request, range: str = "24h"):
+    if not read_session_user(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    hours = {"1h": 1, "6h": 6, "24h": 24}.get(range, 24)
+    config = get_config()
+    data = aggregate_dashboard_data(config.tracking.log_path, range_hours=hours)
+    return JSONResponse(data)

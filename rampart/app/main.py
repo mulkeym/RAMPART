@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 # Singleton state for UserGroupResolver
 _resolver_instance: Optional[Any] = None
 _resolver_config_snapshot: Optional[UserGroupResolverConfig] = None
+from rampart.app.dashboard import router as dashboard_router
 from rampart.app.discovery import router as discovery_router
 from rampart.app.enrollment import router as enrollment_router
 from rampart.app.extension import router as extension_router
@@ -52,6 +53,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(ui_router)
+app.include_router(dashboard_router)
 app.include_router(playground_router)
 app.include_router(extension_router)
 app.include_router(enrollment_router)
