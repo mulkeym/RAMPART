@@ -508,7 +508,7 @@ def _dashboard_js(range_val: str) -> str:
     // ── Eval sources (doughnut) ─────────────────────────────────────
     var es = d.eval_sources || {};
     var esLabels = Object.keys(es);
-    var esColors = { deterministic: '#3b82f6', llm: '#8b5cf6', vision: '#06b6d4' };
+    var esColors = { deterministic: '#3b82f6', llm: '#8b5cf6', vision: '#06b6d4', cache: '#f59e0b' };
     var esBg = esLabels.map(function(l){ return esColors[l] || '#8b949e'; });
     renderChart('chart-sources', 'doughnut', {
       labels: esLabels,

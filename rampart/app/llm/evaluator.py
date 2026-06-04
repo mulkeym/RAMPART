@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from typing import Any, Optional
 
+import asyncio
+
 import httpx
 
 from rampart.app.config import AppConfig, CheckConfig, PolicyConfig
@@ -14,6 +16,18 @@ from rampart.app.tls import tls_verify
 _http_pool: Optional[httpx.AsyncClient] = None
 _http_pool_base_url: str = ""
 
+# Limits concurrent outbound LLM calls to prevent connection pool starvation
+# when asyncio.gather fans out across many policies × many concurrent requests
+_llm_semaphore: asyncio.Semaphore | None = None
+_LLM_MAX_CONCURRENT = 40
+
+
+def _get_semaphore() -> asyncio.Semaphore:
+    global _llm_semaphore
+    if _llm_semaphore is None:
+        _llm_semaphore = asyncio.Semaphore(_LLM_MAX_CONCURRENT)
+    return _llm_semaphore
+
 
 def _get_http_pool(base_url: str, timeout: float, verify_ssl) -> httpx.AsyncClient:
     global _http_pool, _http_pool_base_url
@@ -24,7 +38,7 @@ def _get_http_pool(base_url: str, timeout: float, verify_ssl) -> httpx.AsyncClie
         _http_pool = httpx.AsyncClient(
             timeout=timeout,
             verify=verify_ssl,
-            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=40),
         )
         _http_pool_base_url = base_url
     return _http_pool
@@ -94,10 +108,15 @@ class LlmEvaluator:
         llm_config = self.config.llm_evaluator
         if llm_config.batch_mode and len(checks) > 1:
             return await self._evaluate_batch(request, checks)
-        import asyncio
         request_json = json.dumps(_strip_image_data(request), sort_keys=True, ensure_ascii=True)
+        sem = _get_semaphore()
+
+        async def _throttled(policy, check):
+            async with sem:
+                return await self._evaluate_standard_check(request_json, policy, check)
+
         results = await asyncio.gather(*(
-            self._evaluate_standard_check(request_json, policy, check)
+            _throttled(policy, check)
             for policy, check in checks
         ))
         violations: list[Violation] = []
@@ -220,7 +239,6 @@ class LlmEvaluator:
         ]
 
     async def _evaluate_guardian(self, request: dict[str, Any], checks: list) -> list[Violation]:
-        import asyncio
         text_parts = []
         for message in request.get("messages") or []:
             content = message.get("content")
@@ -234,9 +252,14 @@ class LlmEvaluator:
         if not user_text.strip():
             return []
 
-        import asyncio
+        sem = _get_semaphore()
+
+        async def _throttled(policy, check):
+            async with sem:
+                return await self._evaluate_guardian_check(user_text, policy, check)
+
         results = await asyncio.gather(*(
-            self._evaluate_guardian_check(user_text, policy, check)
+            _throttled(policy, check)
             for policy, check in checks
         ))
         violations: list[Violation] = []

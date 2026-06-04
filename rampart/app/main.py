@@ -1,4 +1,5 @@
 import asyncio
+from collections import OrderedDict
 from copy import deepcopy
 from hashlib import sha256
 import logging
@@ -16,7 +17,8 @@ from rampart.app.openai.compat import extract_user
 from rampart.app.openai.proxy import openai_policy_error, proxy_chat_completion, proxy_chat_completion_stream
 
 # Evaluation cache: hash(prompt + policy_ids) -> (EvaluationResponse, timestamp)
-_eval_cache: dict[str, tuple[EvaluationResponse, float]] = {}
+# OrderedDict gives O(1) LRU eviction instead of O(n) min() scan
+_eval_cache: OrderedDict[str, tuple[EvaluationResponse, float]] = OrderedDict()
 CACHE_TTL = 300  # 5 minutes
 CACHE_MAX_SIZE = 1000
 from rampart.app.policy.engine import PolicyEngine
@@ -117,12 +119,13 @@ async def evaluate(payload: EvaluationRequest, request: Request) -> EvaluationRe
     config = get_config()
     client_record = _resolve_client_record(config, request)
     user = extract_user(payload.request)
-    policies = await _resolve_policies(config, client_record, user=user)
+    policies, user_group_result = await _resolve_policies(config, client_record, user=user)
     cache_key = _eval_cache_key(payload.request, policies)
     response = _get_cached_eval(cache_key)
+    cached = response is not None
     engine = PolicyEngine(config, policies, include_sanitized_request=payload.include_sanitized_request)
 
-    if response is None:
+    if not cached:
         start = time()
         response = await engine.evaluate(payload.request)
         eval_ms = int((time() - start) * 1000)
@@ -135,8 +138,8 @@ async def evaluate(payload: EvaluationRequest, request: Request) -> EvaluationRe
         sanitize_start = time()
         response = await engine.sanitize_response(payload.request, response)
         sanitize_ms = int((time() - sanitize_start) * 1000)
-    _track_evaluation(config, request, response, client_record, policies, user=user, model=payload.request.get("model", ""), eval_ms=eval_ms)
-    _log_prompt(request, payload.request, response, policies, client_record, user, eval_ms, source="api", sanitize_ms=sanitize_ms)
+    _track_evaluation(config, request, _as_cached(response) if cached else response, client_record, policies, user=user, model=payload.request.get("model", ""), eval_ms=eval_ms)
+    _log_prompt(request, payload.request, response, policies, client_record, user, eval_ms, source="api", sanitize_ms=sanitize_ms, user_group_result=user_group_result)
     if client_record:
         record_evaluation(client_record.id, len(response.violations), config.clients.path)
     return response
@@ -147,14 +150,15 @@ async def evaluate_chat_completions(payload: dict[str, Any], request: Request):
     config = get_config()
     client_record = _resolve_client_record(config, request)
     user = extract_user(payload)
-    policies = await _resolve_policies(config, client_record, user=user)
+    policies, user_group_result = await _resolve_policies(config, client_record, user=user)
     is_streaming = payload.get("stream", False)
 
     # Check evaluation cache
     cache_key = _eval_cache_key(payload, policies)
     response = _get_cached_eval(cache_key)
+    cached = response is not None
 
-    if response is None:
+    if not cached:
         engine = PolicyEngine(config, policies)
         start = time()
         response = await engine.evaluate(payload)
@@ -163,8 +167,8 @@ async def evaluate_chat_completions(payload: dict[str, Any], request: Request):
     else:
         eval_ms = 0  # cached
 
-    _track_evaluation(config, request, response, client_record, policies, user=user, model=payload.get("model", ""), eval_ms=eval_ms)
-    _log_prompt(request, payload, response, policies, client_record, user, eval_ms, source="gateway")
+    _track_evaluation(config, request, _as_cached(response) if cached else response, client_record, policies, user=user, model=payload.get("model", ""), eval_ms=eval_ms)
+    _log_prompt(request, payload, response, policies, client_record, user, eval_ms, source="gateway", user_group_result=user_group_result)
     if client_record:
         record_evaluation(client_record.id, len(response.violations), config.clients.path)
     blocking_violations = _blocking_violations(response, policies)
@@ -298,42 +302,36 @@ async def resolve_policies_for_user(config: AppConfig, user: str) -> Optional[_U
     return _UserGroupResult(external_groups, rampart_group_ids, policies)
 
 
-# Stashed group resolution result for current request (used by _log_prompt)
-_last_user_group_result: Optional[_UserGroupResult] = None
-
-
-async def _resolve_policies(config: AppConfig, client: Optional[ClientRecord], user: Optional[str] = None) -> list[PolicyConfig]:
-    global _last_user_group_result
-    _last_user_group_result = None
+async def _resolve_policies(config: AppConfig, client: Optional[ClientRecord], user: Optional[str] = None) -> tuple[list[PolicyConfig], Optional[_UserGroupResult]]:
     enabled_policies = [policy for policy in config.policies if policy.enabled]
+    user_group_result: Optional[_UserGroupResult] = None
 
     # If user is present and resolver is enabled, try user-based resolution first
     if user and config.user_group_resolver.enabled:
         try:
             result = await resolve_policies_for_user(config, user)
             if result and result.policies:
-                _last_user_group_result = result
-                return result.policies
+                return result.policies, result
             elif result:
-                _last_user_group_result = result  # groups resolved but no policy match
+                user_group_result = result  # groups resolved but no policy match
         except Exception:
             logger.exception("User group resolver failed for user=%s, falling back", user)
 
     if client is None:
-        return enabled_policies
+        return enabled_policies, user_group_result
     # Group-enrolled clients: resolve policies from the group (always dynamic)
     if client.group_id:
         from rampart.app.group_store import get_group
         group = get_group(client.group_id)
         if group and group.policy_ids:
             assigned = set(group.policy_ids)
-            return [policy for policy in enabled_policies if policy.id in assigned]
-        return enabled_policies
+            return [policy for policy in enabled_policies if policy.id in assigned], user_group_result
+        return enabled_policies, user_group_result
     # Non-group clients: use direct policy assignment
     if not client.policy_ids:
-        return enabled_policies
+        return enabled_policies, user_group_result
     assigned = set(client.policy_ids)
-    return [policy for policy in enabled_policies if policy.id in assigned]
+    return [policy for policy in enabled_policies if policy.id in assigned], user_group_result
 
 
 def _blocking_violations(response: EvaluationResponse, policies: list[PolicyConfig]):
@@ -387,8 +385,9 @@ def _log_prompt(
     eval_ms: int,
     source: str,
     sanitize_ms: int = 0,
+    user_group_result: Optional[_UserGroupResult] = None,
 ) -> None:
-    grp = _last_user_group_result
+    grp = user_group_result
     log_prompt(PromptLogEntry(
         source=source,
         user=user,
@@ -453,12 +452,26 @@ def _get_cached_eval(key: str) -> Optional[EvaluationResponse]:
     if time() - ts > CACHE_TTL:
         del _eval_cache[key]
         return None
+    _eval_cache.move_to_end(key)
     return response
 
 
+def _as_cached(response: EvaluationResponse) -> EvaluationResponse:
+    """Return a copy of the response with violation sources set to 'cache' for tracking."""
+    if not response.violations:
+        return response
+    copy = response.model_copy(deep=True)
+    for v in copy.violations:
+        v.source = "cache"
+    return copy
+
+
 def _set_cached_eval(key: str, response: EvaluationResponse) -> None:
-    # Evict oldest entries if cache is full
+    if key in _eval_cache:
+        _eval_cache.move_to_end(key)
+        _eval_cache[key] = (response, time())
+        return
+    # O(1) eviction of least-recently-used entry
     if len(_eval_cache) >= CACHE_MAX_SIZE:
-        oldest = min(_eval_cache, key=lambda k: _eval_cache[k][1])
-        del _eval_cache[oldest]
+        _eval_cache.popitem(last=False)
     _eval_cache[key] = (response, time())

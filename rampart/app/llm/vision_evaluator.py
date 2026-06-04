@@ -11,6 +11,25 @@ from rampart.app.models import Violation
 from rampart.app.tls import tls_verify
 
 
+# Shared connection pool — reuses TCP/TLS connections across requests
+_http_pool: Optional[httpx.AsyncClient] = None
+_http_pool_base_url: str = ""
+
+
+def _get_http_pool(base_url: str, timeout: float, verify_ssl) -> httpx.AsyncClient:
+    global _http_pool, _http_pool_base_url
+    if _http_pool is None or _http_pool_base_url != base_url:
+        if _http_pool is not None:
+            _http_pool = None
+        _http_pool = httpx.AsyncClient(
+            timeout=timeout,
+            verify=verify_ssl,
+            limits=httpx.Limits(max_connections=40, max_keepalive_connections=20),
+        )
+        _http_pool_base_url = base_url
+    return _http_pool
+
+
 class VisionEvaluator:
     def __init__(self, config: AppConfig, policies: Optional[list[PolicyConfig]] = None):
         self.config = config
@@ -68,12 +87,12 @@ class VisionEvaluator:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=vision_config.timeout_seconds, verify=tls_verify()) as client:
-                response = await client.post(
-                    f"{vision_config.base_url.rstrip('/')}/chat/completions",
-                    json=payload,
-                )
-                response.raise_for_status()
+            client = _get_http_pool(vision_config.base_url, vision_config.timeout_seconds, tls_verify())
+            response = await client.post(
+                f"{vision_config.base_url.rstrip('/')}/chat/completions",
+                json=payload,
+            )
+            response.raise_for_status()
 
             content = response.json()["choices"][0]["message"]["content"]
             data = json.loads(_strip_json_fence(content))
