@@ -138,7 +138,7 @@ async def evaluate(payload: EvaluationRequest, request: Request) -> EvaluationRe
         sanitize_start = time()
         response = await engine.sanitize_response(payload.request, response)
         sanitize_ms = int((time() - sanitize_start) * 1000)
-    _track_evaluation(config, request, _as_cached(response) if cached else response, client_record, policies, user=user, model=payload.request.get("model", ""), eval_ms=eval_ms)
+    _track_evaluation(config, request, response, client_record, policies, user=user, model=payload.request.get("model", ""), eval_ms=eval_ms, cached=cached)
     _log_prompt(request, payload.request, response, policies, client_record, user, eval_ms, source="api", sanitize_ms=sanitize_ms, user_group_result=user_group_result)
     if client_record:
         record_evaluation(client_record.id, len(response.violations), config.clients.path)
@@ -167,7 +167,7 @@ async def evaluate_chat_completions(payload: dict[str, Any], request: Request):
     else:
         eval_ms = 0  # cached
 
-    _track_evaluation(config, request, _as_cached(response) if cached else response, client_record, policies, user=user, model=payload.get("model", ""), eval_ms=eval_ms)
+    _track_evaluation(config, request, response, client_record, policies, user=user, model=payload.get("model", ""), eval_ms=eval_ms, cached=cached)
     _log_prompt(request, payload, response, policies, client_record, user, eval_ms, source="gateway", user_group_result=user_group_result)
     if client_record:
         record_evaluation(client_record.id, len(response.violations), config.clients.path)
@@ -362,7 +362,7 @@ def _apply_model_override(payload: dict[str, Any], model: str) -> dict[str, Any]
     return updated
 
 
-def _track_evaluation(config, request: Request, response: EvaluationResponse, client_record: Optional[ClientRecord], policies: list[PolicyConfig], user: Optional[str] = None, model: str = "", eval_ms: int = 0) -> None:
+def _track_evaluation(config, request: Request, response: EvaluationResponse, client_record: Optional[ClientRecord], policies: list[PolicyConfig], user: Optional[str] = None, model: str = "", eval_ms: int = 0, cached: bool = False) -> None:
     fallback = ClientContext(
         customer=request.headers.get("x-rampart-customer", "default"),
         client_id=request.headers.get("x-rampart-client-id", "default-client"),
@@ -372,7 +372,7 @@ def _track_evaluation(config, request: Request, response: EvaluationResponse, cl
     )
     client = client_context_from_record(client_record, fallback)
     applied_policies = [policy.id for policy in policies if policy.enabled]
-    write_evaluation_event(config.tracking, client, response, applied_policies, model=model, eval_ms=eval_ms)
+    write_evaluation_event(config.tracking, client, response, applied_policies, model=model, eval_ms=eval_ms, cached=cached)
 
 
 def _log_prompt(
@@ -454,16 +454,6 @@ def _get_cached_eval(key: str) -> Optional[EvaluationResponse]:
         return None
     _eval_cache.move_to_end(key)
     return response
-
-
-def _as_cached(response: EvaluationResponse) -> EvaluationResponse:
-    """Return a copy of the response with violation sources set to 'cache' for tracking."""
-    if not response.violations:
-        return response
-    copy = response.model_copy(deep=True)
-    for v in copy.violations:
-        v.source = "cache"
-    return copy
 
 
 def _set_cached_eval(key: str, response: EvaluationResponse) -> None:

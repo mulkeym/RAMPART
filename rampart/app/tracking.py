@@ -46,6 +46,7 @@ def write_evaluation_event(
     applied_policies: list[str],
     model: str = "",
     eval_ms: int = 0,
+    cached: bool = False,
 ) -> None:
     if not config.enabled:
         return
@@ -63,6 +64,7 @@ def write_evaluation_event(
         "user": client.user,
         "model": model,
         "eval_ms": eval_ms,
+        "cached": cached,
         "decision": response.decision,
         "applied_policies": applied_policies,
         "violations": [

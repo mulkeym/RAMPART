@@ -181,6 +181,9 @@ def aggregate_dashboard_data(log_path: str, range_hours: int = 24) -> Dict[str, 
     # ── eval sources ────────────────────────────────────────────────────
     eval_sources: Dict[str, int] = defaultdict(int)
     for e in current_events:
+        if e.get("cached"):
+            eval_sources["cache"] += 1
+            continue
         violations = e.get("violations")
         if not isinstance(violations, list):
             continue

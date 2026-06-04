@@ -15,7 +15,7 @@ class Violation(BaseModel):
     severity: str
     category: str
     message: str
-    source: Literal["deterministic", "llm", "vision", "cache"] = "deterministic"
+    source: Literal["deterministic", "llm", "vision"] = "deterministic"
     path: Optional[str] = None
 
 
